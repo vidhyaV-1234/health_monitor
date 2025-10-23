@@ -6,6 +6,9 @@ import torch
 import torch.nn.functional as F
 import os
 from io import BytesIO
+from pathlib import Path
+from supabase import create_client, Client
+import json
 
 warnings.filterwarnings("ignore")
 
@@ -51,6 +54,24 @@ class MultimodalPreprocessor:
         print("\n" + "="*70)
         print("✅ PREPROCESSOR READY")
         print("="*70 + "\n")
+        
+        # Supabase client for storage retrieval
+        supabase_url = os.getenv("SUPABASE_URL")
+        supabase_key = os.getenv("SUPABASE_KEY")
+        if supabase_url and supabase_key:
+            try:
+                self.supabase: Client = create_client(supabase_url, supabase_key)
+                print("✓ Supabase client initialized for storage retrieval")
+            except Exception as e:
+                print(f"⚠️  Supabase client init failed: {str(e)}")
+                self.supabase = None
+        else:
+            self.supabase = None
+            print("⚠️  SUPABASE_URL/KEY missing; storage retrieval disabled")
+        
+        self.media_bucket = os.getenv("SUPABASE_MEDIA_BUCKET", "mood-media")
+        self.temp_dir = Path(__file__).parent / "temp_uploads"
+        self.temp_dir.mkdir(exist_ok=True)
     
     def transcribe_audio(self, audio_path):
         """
@@ -248,6 +269,74 @@ class MultimodalPreprocessor:
         print("\nℹ️  Skipping analysis (analyze=False or no user_id)")
         result['analysis_result'] = None
         return result
+
+    def preprocess_from_supabase(self, user_id: str, analyze: bool = True):
+        """
+        Fetch latest audio/image/text for the user from Supabase Storage and preprocess.
+        Files are expected under bucket/<user_id>/ with timestamped names.
+        """
+        if not self.supabase:
+            print("❌ Supabase client not available; cannot fetch from storage")
+            return self.preprocess(audio_path=None, image_path=None, text_input=None, user_id=user_id, analyze=analyze)
+        
+        try:
+            folder = f"{user_id}"
+            # List files in the user's folder
+            items = self.supabase.storage.from_(self.media_bucket).list(path=folder)
+            if not items:
+                print(f"⚠️  No items found in storage for user {user_id}")
+                return self.preprocess(audio_path=None, image_path=None, text_input=None, user_id=user_id, analyze=analyze)
+            
+            # Pick latest by name (timestamp prefix) per type
+            audio_exts = (".wav", ".mp3", ".m4a", ".ogg")
+            image_exts = (".jpg", ".jpeg", ".png")
+            text_name_suffix = "_text.txt"
+            
+            audio_candidates = sorted([i["name"] for i in items if any(i["name"].lower().endswith(ext) for ext in audio_exts)], reverse=True)
+            image_candidates = sorted([i["name"] for i in items if any(i["name"].lower().endswith(ext) for ext in image_exts)], reverse=True)
+            text_candidates = sorted([i["name"] for i in items if i["name"].lower().endswith(text_name_suffix)], reverse=True)
+            
+            latest_audio_path = f"{folder}/{audio_candidates[0]}" if audio_candidates else None
+            latest_image_path = f"{folder}/{image_candidates[0]}" if image_candidates else None
+            latest_text_path = f"{folder}/{text_candidates[0]}" if text_candidates else None
+            
+            # Download to temp files
+            local_audio = None
+            local_image = None
+            text_input = None
+            
+            if latest_audio_path:
+                audio_bytes = self.supabase.storage.from_(self.media_bucket).download(latest_audio_path)
+                local_audio = self.temp_dir / latest_audio_path.replace("/", "_")
+                with open(local_audio, "wb") as f:
+                    f.write(audio_bytes)
+                print(f"✓ Downloaded audio to {local_audio}")
+            
+            if latest_image_path:
+                image_bytes = self.supabase.storage.from_(self.media_bucket).download(latest_image_path)
+                local_image = self.temp_dir / latest_image_path.replace("/", "_")
+                with open(local_image, "wb") as f:
+                    f.write(image_bytes)
+                print(f"✓ Downloaded image to {local_image}")
+            
+            if latest_text_path:
+                text_bytes = self.supabase.storage.from_(self.media_bucket).download(latest_text_path)
+                try:
+                    text_input = text_bytes.decode("utf-8")
+                except Exception:
+                    text_input = text_bytes.decode("latin-1", errors="ignore")
+                print(f"✓ Loaded text ({len(text_input)} chars)")
+            
+            return self.preprocess(
+                audio_path=str(local_audio) if local_audio else None,
+                image_path=str(local_image) if local_image else None,
+                text_input=text_input,
+                user_id=user_id,
+                analyze=analyze,
+            )
+        except Exception as e:
+            print(f"❌ Error fetching from Supabase Storage: {str(e)}")
+            return self.preprocess(audio_path=None, image_path=None, text_input=None, user_id=user_id, analyze=analyze)
     
     def print_detailed_results(self, preprocessed_data):
         """Print detailed preprocessing results"""
