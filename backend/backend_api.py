@@ -17,6 +17,7 @@ from typing import Optional
 import jwt
 from dotenv import load_dotenv
 
+
 # Load environment variables from .env file
 load_dotenv()
 
@@ -66,18 +67,26 @@ app = FastAPI(
 )
 
 # Add CORS middleware - configure allowed origins via environment variable
-ALLOWED_ORIGINS = os.getenv(
-    "ALLOWED_ORIGINS", 
+raw_allowed_origins = os.getenv(
+    "ALLOWED_ORIGINS",
     "https://health-monitor-tan.vercel.app,https://health-monitor-1-6vo8.onrender.com"
-).split(",")
+)
+ALLOWED_ORIGINS = [o.strip() for o in raw_allowed_origins.split(",") if o.strip()]
+
+# Optional: allow origins via regex (e.g., ^https://.*\.vercel\.app$)
+ALLOWED_ORIGIN_REGEX = os.getenv("ALLOWED_ORIGIN_REGEX", None)
+
+logger.info(f"CORS allow_origins: {ALLOWED_ORIGINS}")
+if ALLOWED_ORIGIN_REGEX:
+    logger.info(f"CORS allow_origin_regex: {ALLOWED_ORIGIN_REGEX}")
 
 # For debugging: Allow all origins temporarily (remove in production)
 # ALLOWED_ORIGINS = ["*"]
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=ALLOWED_ORIGINS,
-    allow_credentials=True,
+    allow_origins=["*"],
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -1034,8 +1043,8 @@ if __name__ == "__main__":
     port = int(os.getenv("PORT", 8000))
     
     logger.info("🚀 Starting Wellness Activity Recommender API...")
-    logger.info(f"📍 Frontend: http://localhost:{port}/app")
-    logger.info(f"📍 API: http://localhost:{port}/api")
+    logger.info(f"📍 Frontend: https://health-monitor-tan.vercel.app/")
+    logger.info(f"📍 API: https://health-monitor-tan.vercel.app/")
     logger.info(f"📍 Health: http://localhost:{port}/health")
     logger.info(f"📍 Info: http://localhost:{port}/api/info")
     
