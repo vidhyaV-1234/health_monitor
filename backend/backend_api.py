@@ -68,8 +68,12 @@ app = FastAPI(
 # Add CORS middleware - configure allowed origins via environment variable
 ALLOWED_ORIGINS = os.getenv(
     "ALLOWED_ORIGINS", 
-    "http://localhost:5173,http://localhost:3000,https://health-monitor-tan.vercel.app"
+    "https://health-monitor-tan.vercel.app,https://health-monitor-1-6vo8.onrender.com"
 ).split(",")
+
+# For debugging: Allow all origins temporarily (remove in production)
+# ALLOWED_ORIGINS = ["*"]
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=ALLOWED_ORIGINS,
