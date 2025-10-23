@@ -2,9 +2,9 @@
 python-dotenv==1.0.0
 
 # API & Authentication
-fastapi==0.104.1
-uvicorn==0.24.0
-pydantic[email]==2.5.0
+fastapi==0.115.0
+uvicorn==0.30.6
+pydantic[email]==2.9.2
 PyJWT==2.10.1
 passlib[bcrypt]==1.7.4
 python-multipart==0.0.6
@@ -17,5 +17,5 @@ numpy>=1.24.0
 requests>=2.31.0
 boto3>=1.28.0
 
-# Avoid building Rust packages from source on Render
+# Prevent Rust build issues on Render
 --only-binary :all:
