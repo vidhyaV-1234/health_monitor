@@ -247,11 +247,14 @@ export default function MoodEntry({ user }) {
       <div className="relative z-10 bg-white bg-opacity-80 backdrop-blur-md shadow-sm">
         <div className="max-w-7xl mx-auto px-4 py-4 flex justify-between items-center">
           <div className="flex items-center space-x-3">
-            <span className="text-3xl">💭</span>
-            <h1 className="text-2xl font-bold gradient-text">MoodFlow</h1>
+            <img 
+              src="/logo.jpeg" 
+              alt="Mood Flow Logo" 
+              className="w-12 h-12 rounded-full shadow-md object-cover"
+            />
+            <h1 className="text-2xl font-bold gradient-text">mood flow</h1>
           </div>
           <div className="flex items-center space-x-4">
-            <span className="text-gray-600">Welcome, {user.username || 'User'}</span>
             <button
               onClick={handleLogout}
               className="px-4 py-2 bg-red-500 text-white rounded-full hover:bg-red-600 transition-all hover:scale-105"
