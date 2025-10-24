@@ -145,7 +145,23 @@ export default function MoodEntry({ user }) {
       console.log("Mood analysis result:", response.data.data);
     } catch (err) {
       console.error("Error:", err);
-      setError("Error processing mood: " + (err.response?.data?.detail || err.message));
+      console.error("Error response:", err.response?.data);
+      
+      let errorMsg = "Error processing mood";
+      if (err.response?.data?.detail) {
+        // Handle array of error objects from FastAPI validation
+        if (Array.isArray(err.response.data.detail)) {
+          errorMsg += ": " + err.response.data.detail.map(e => e.msg || JSON.stringify(e)).join(", ");
+        } else if (typeof err.response.data.detail === 'string') {
+          errorMsg += ": " + err.response.data.detail;
+        } else {
+          errorMsg += ": " + JSON.stringify(err.response.data.detail);
+        }
+      } else if (err.message) {
+        errorMsg += ": " + err.message;
+      }
+      
+      setError(errorMsg);
     } finally {
       setLoading(false);
     }
