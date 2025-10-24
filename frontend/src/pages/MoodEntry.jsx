@@ -3,6 +3,7 @@ import axios from "axios";
 import { API_BASE_URL } from "../config";
 import MasonryGrid from "../components/MasonryGrid";
 import NotificationBanner from "../components/NotificationBanner";
+import { supabase, uploadToBucket } from "../utils/supabase";
 
 export default function MoodEntry({ user }) {
   const [form, setForm] = useState({
@@ -58,12 +59,39 @@ export default function MoodEntry({ user }) {
     setResult(null);
 
     try {
+      // 1) Upload media to Supabase Storage from the frontend
+      const bucket = import.meta.env.VITE_SUPABASE_MEDIA_BUCKET || "mood-media";
+      const ts = new Date().toISOString().replace(/[-:.TZ]/g, "").slice(0, 14);
+      const folder = `${form.id}`;
+
+      if (!supabase) throw new Error("Supabase client not initialized");
+
+      if (form.mood_audio) {
+        const audioPath = `${folder}/${ts}_${form.mood_audio.name}`;
+        await uploadToBucket({
+          bucket,
+          path: audioPath,
+          file: form.mood_audio,
+          contentType: form.mood_audio.type || "application/octet-stream",
+        });
+      }
+
+      if (form.mood_image) {
+        const imagePath = `${folder}/${ts}_${form.mood_image.name}`;
+        await uploadToBucket({
+          bucket,
+          path: imagePath,
+          file: form.mood_image,
+          contentType: form.mood_image.type || "application/octet-stream",
+        });
+      }
+
+      // Optional: Let backend store text for consistency; do not upload text from FE
       const formData = new FormData();
       formData.append("id", form.id);
       formData.append("mood_text", form.mood_text);
-      if (form.mood_audio) formData.append("mood_audio", form.mood_audio);
-      if (form.mood_image) formData.append("mood_image", form.mood_image);
 
+      // 2) Trigger backend to run preprocessor by user id
       const response = await axios.post(`${API_BASE_URL}/api/mood`, formData, {
         headers: {
           Authorization: `Bearer ${token}`,

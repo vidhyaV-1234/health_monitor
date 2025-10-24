@@ -69,7 +69,8 @@ class MultimodalPreprocessor:
             self.supabase = None
             print("⚠️  SUPABASE_URL/KEY missing; storage retrieval disabled")
         
-        self.media_bucket = os.getenv("SUPABASE_MEDIA_BUCKET", "mood-media")
+        # Prefer underscore bucket by default; will fallback to dash variant during fetch
+        self.media_bucket = os.getenv("SUPABASE_MEDIA_BUCKET", "mood_media")
         self.temp_dir = Path(__file__).parent / "temp_uploads"
         self.temp_dir.mkdir(exist_ok=True)
     
@@ -281,8 +282,21 @@ class MultimodalPreprocessor:
         
         try:
             folder = f"{user_id}"
-            # List files in the user's folder
-            items = self.supabase.storage.from_(self.media_bucket).list(path=folder)
+            # List files in the user's folder, trying primary bucket then fallback alias
+            bucket_used = self.media_bucket
+            try:
+                items = self.supabase.storage.from_(bucket_used).list(path=folder)
+            except Exception:
+                items = None
+            if not items:
+                alt_bucket = "mood-media" if bucket_used == "mood_media" else "mood_media"
+                try:
+                    items = self.supabase.storage.from_(alt_bucket).list(path=folder)
+                    if items:
+                        bucket_used = alt_bucket
+                        print(f"ℹ️  Using fallback storage bucket: {bucket_used}")
+                except Exception:
+                    items = None
             if not items:
                 print(f"⚠️  No items found in storage for user {user_id}")
                 return self.preprocess(audio_path=None, image_path=None, text_input=None, user_id=user_id, analyze=analyze)
@@ -306,21 +320,21 @@ class MultimodalPreprocessor:
             text_input = None
             
             if latest_audio_path:
-                audio_bytes = self.supabase.storage.from_(self.media_bucket).download(latest_audio_path)
+                audio_bytes = self.supabase.storage.from_(bucket_used).download(latest_audio_path)
                 local_audio = self.temp_dir / latest_audio_path.replace("/", "_")
                 with open(local_audio, "wb") as f:
                     f.write(audio_bytes)
                 print(f"✓ Downloaded audio to {local_audio}")
             
             if latest_image_path:
-                image_bytes = self.supabase.storage.from_(self.media_bucket).download(latest_image_path)
+                image_bytes = self.supabase.storage.from_(bucket_used).download(latest_image_path)
                 local_image = self.temp_dir / latest_image_path.replace("/", "_")
                 with open(local_image, "wb") as f:
                     f.write(image_bytes)
                 print(f"✓ Downloaded image to {local_image}")
             
             if latest_text_path:
-                text_bytes = self.supabase.storage.from_(self.media_bucket).download(latest_text_path)
+                text_bytes = self.supabase.storage.from_(bucket_used).download(latest_text_path)
                 try:
                     text_input = text_bytes.decode("utf-8")
                 except Exception:
