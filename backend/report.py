@@ -10,20 +10,29 @@ SUPABASE_URL = os.getenv("SUPABASE_URL","https://cswobvpopxypghwjolnb.supabase.c
 SUPABASE_KEY = os.getenv("SUPABASE_KEY","eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNzd29idnBvcHh5cGdod2pvbG5iIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjA4NzQ5ODMsImV4cCI6MjA3NjQ1MDk4M30.P_E9zrpgOAI-mDVCCSWQDYLbfSXbng67EIApxujhNtQ")
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-# Initialize AWS Bedrock client with explicit credentials
+# Initialize AWS Bedrock client with explicit credentials (supports temporary credentials)
 aws_access_key = os.getenv("AWS_ACCESS_KEY_ID")
 aws_secret_key = os.getenv("AWS_SECRET_ACCESS_KEY")
+aws_session_token = os.getenv("AWS_SESSION_TOKEN")  # For temporary credentials
 aws_region = os.getenv("AWS_REGION", "us-east-1")
 
 if not aws_access_key or not aws_secret_key:
     raise ValueError("AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY must be set in environment variables")
 
-BEDROCK_CLIENT = boto3.client(
-    "bedrock-runtime",
-    region_name=aws_region,
-    aws_access_key_id=aws_access_key,
-    aws_secret_access_key=aws_secret_key
-)
+# Build client kwargs
+client_kwargs = {
+    "service_name": "bedrock-runtime",
+    "region_name": aws_region,
+    "aws_access_key_id": aws_access_key,
+    "aws_secret_access_key": aws_secret_key
+}
+
+# Add session token if present (for temporary credentials)
+if aws_session_token:
+    client_kwargs["aws_session_token"] = aws_session_token
+    print(f"  → Using temporary AWS credentials with session token")
+
+BEDROCK_CLIENT = boto3.client(**client_kwargs)
 MODEL_ID = "us.anthropic.claude-3-5-sonnet-20241022-v2:0"
 
 print(f"✓ AWS Bedrock client initialized")
