@@ -72,24 +72,34 @@ export default function MoodEntry({ user }) {
 
         if (form.mood_audio) {
           console.log("🎤 Uploading audio...");
-          const result = await uploadFileAndGetUrl({
-            bucket,
-            file: form.mood_audio,
-            folder,
-          });
-          audioUrl = result.publicUrl;
-          console.log("✓ Audio uploaded:", audioUrl);
+          try {
+            const result = await uploadFileAndGetUrl({
+              bucket,
+              file: form.mood_audio,
+              folder,
+            });
+            audioUrl = result.publicUrl;
+            console.log("✓ Audio uploaded:", audioUrl);
+          } catch (uploadErr) {
+            console.error("Audio upload failed:", uploadErr);
+            throw new Error(`Audio upload failed: ${uploadErr.message}`);
+          }
         }
 
         if (form.mood_image) {
           console.log("📷 Uploading image...");
-          const result = await uploadFileAndGetUrl({
-            bucket,
-            file: form.mood_image,
-            folder,
-          });
-          imageUrl = result.publicUrl;
-          console.log("✓ Image uploaded:", imageUrl);
+          try {
+            const result = await uploadFileAndGetUrl({
+              bucket,
+              file: form.mood_image,
+              folder,
+            });
+            imageUrl = result.publicUrl;
+            console.log("✓ Image uploaded:", imageUrl);
+          } catch (uploadErr) {
+            console.error("Image upload failed:", uploadErr);
+            throw new Error(`Image upload failed: ${uploadErr.message}`);
+          }
         }
 
         // Send id, text, and URLs to backend

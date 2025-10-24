@@ -512,13 +512,22 @@ async def submit_mood(
     request: Request
 ):
     """Submit mood entry: accepts JSON with URLs or form-data with files"""
+    logger.info("=== MOOD ENDPOINT CALLED ===")
     try:
         content_type = request.headers.get("content-type", "")
-        logger.info(f"Received mood submission with content-type: {content_type}")
+        logger.info(f"Content-Type: {content_type}")
+        
+        # Read raw body for debugging
+        body_bytes = await request.body()
+        logger.info(f"Raw body length: {len(body_bytes)}")
+        logger.info(f"Raw body preview: {body_bytes[:200]}")
         
         # Handle JSON (URLs from frontend Supabase upload)
         if "application/json" in content_type:
-            data = await request.json()
+            import json as json_lib
+            data = json_lib.loads(body_bytes)
+            logger.info(f"Parsed JSON data: {data}")
+            
             user_id = data.get("id")
             mood_text = data.get("mood_text")
             audio_url = data.get("audio_url")
