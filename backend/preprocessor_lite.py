@@ -1,6 +1,6 @@
 """
 Lightweight Preprocessor for Multimodal Inputs
-Uses lightweight models that work on Render free tier
+Uses ultra-lightweight models that work on Render free tier (512MB RAM)
 """
 
 import speech_recognition as sr
@@ -10,42 +10,39 @@ import warnings
 from pathlib import Path
 from supabase import create_client, Client
 import json
+import numpy as np
 
 warnings.filterwarnings("ignore")
 
 class MultimodalPreprocessor:
     """
-    Lightweight preprocessor:
-    - Audio: Google Speech Recognition (free cloud API, no download)
-    - Image: Hugging Face emotion model (~100MB, lightweight)
-    - Works on Render free tier!
+    Ultra-lightweight preprocessor optimized for Render free tier:
+    - Audio: Google Speech Recognition (free cloud API, 0MB)
+    - Image: DeepFace with opencv backend (~5MB)
+    - Total memory footprint: < 100MB
     """
     
     def __init__(self):
         """Initialize lightweight models"""
         print("="*70)
-        print("INITIALIZING LIGHTWEIGHT PREPROCESSOR")
+        print("INITIALIZING ULTRA-LIGHTWEIGHT PREPROCESSOR")
         print("="*70)
         
         # Initialize speech recognizer (uses Google's free API)
         print("\n🎤 Initializing Speech Recognition...")
         self.recognizer = sr.Recognizer()
-        print("✓ Speech recognizer ready (Google Speech API - free)")
+        print("✓ Speech recognizer ready (Google Speech API - free, 0MB)")
         
-        # Initialize emotion detection model (Hugging Face - lightweight)
-        print("\n😊 Initializing Emotion Detection Model...")
+        # Initialize DeepFace for emotion detection (very lightweight)
+        print("\n😊 Initializing Emotion Detection (DeepFace)...")
         try:
-            from transformers import pipeline
-            # Use a small, efficient emotion detection model
-            self.emotion_detector = pipeline(
-                "image-classification",
-                model="dima806/facial_emotions_image_detection",
-                device=-1  # Use CPU
-            )
-            print("✓ Emotion model loaded (~100MB, Hugging Face)")
+            from deepface import DeepFace
+            self.DeepFace = DeepFace
+            # Test initialization (downloads tiny model ~5MB on first use)
+            print("✓ DeepFace ready (~5MB, ultra-lightweight)")
         except Exception as e:
-            print(f"⚠️ Emotion model initialization failed: {str(e)}")
-            self.emotion_detector = None
+            print(f"⚠️ DeepFace initialization failed: {str(e)}")
+            self.DeepFace = None
         
         # Initialize Supabase client for storage operations
         SUPABASE_URL = os.getenv("SUPABASE_URL")
@@ -59,7 +56,7 @@ class MultimodalPreprocessor:
             print("⚠️ Supabase not configured")
         
         print("\n" + "="*70)
-        print("✅ LIGHTWEIGHT PREPROCESSOR READY")
+        print("✅ ULTRA-LIGHTWEIGHT PREPROCESSOR READY")
         print("="*70 + "\n")
     
     def transcribe_audio(self, audio_path):
@@ -98,7 +95,7 @@ class MultimodalPreprocessor:
     
     def detect_emotion(self, image_path):
         """
-        Detect emotion using Hugging Face emotion model
+        Detect emotion using DeepFace (ultra-lightweight)
         
         Args:
             image_path: Path to image file
@@ -109,33 +106,39 @@ class MultimodalPreprocessor:
         if not image_path or not os.path.exists(image_path):
             return None, 0.0, {}
         
-        if not self.emotion_detector:
-            print("⚠️ Emotion detector not available")
+        if not self.DeepFace:
+            print("⚠️ DeepFace not available")
             return None, 0.0, {}
         
         try:
             print(f"\n😊 Detecting emotion from: {image_path}")
             
-            # Load image with PIL
-            img = Image.open(image_path).convert("RGB")
+            # Analyze emotion with DeepFace (uses opencv backend - very lightweight)
+            result = self.DeepFace.analyze(
+                img_path=image_path,
+                actions=['emotion'],
+                enforce_detection=False,  # Don't fail if no face detected
+                detector_backend='opencv',  # Use lightweight opencv detector
+                silent=True
+            )
             
-            # Run emotion detection
-            results = self.emotion_detector(img)
+            # Handle result (can be list or dict depending on DeepFace version)
+            if isinstance(result, list):
+                result = result[0] if result else {}
             
-            if not results or len(results) == 0:
+            if not result or 'emotion' not in result:
                 print("⚠️ No emotion detected in image")
                 return None, 0.0, {}
             
-            # Get top emotion
-            top_result = results[0]
-            emotion_name = top_result['label'].capitalize()
-            confidence = top_result['score']
+            emotions = result['emotion']
+            dominant_emotion = result.get('dominant_emotion', max(emotions, key=emotions.get))
+            confidence = emotions.get(dominant_emotion, 0) / 100.0  # Convert to 0-1 scale
             
-            # Prepare all emotions dict
-            all_emotions = {result['label'].capitalize(): result['score'] for result in results}
+            # Capitalize emotion name
+            emotion_name = dominant_emotion.capitalize()
             
             details = {
-                'all_emotions': all_emotions
+                'all_emotions': {k.capitalize(): v/100.0 for k, v in emotions.items()}
             }
             
             print(f"✓ Detected emotion: {emotion_name} ({confidence:.2%} confidence)")

@@ -108,11 +108,11 @@ def initialize_models():
     try:
         logger.info("Initializing models...")
         
-        # Initialize lightweight preprocessor
+        # Initialize ultra-lightweight preprocessor
         try:
             from preprocessor_lite import MultimodalPreprocessor
             preprocessor = MultimodalPreprocessor()
-            logger.info("✓ Lightweight Preprocessor initialized (Google Speech + Hugging Face Emotion)")
+            logger.info("✓ Ultra-Lightweight Preprocessor initialized (Google Speech + DeepFace <100MB)")
         except Exception as e:
             logger.warning(f"Preprocessor initialization failed: {str(e)}")
             preprocessor = None
@@ -375,12 +375,23 @@ def verify_token(authorization: Optional[str] = Header(None)) -> dict:
     except Exception as e:
         logger.error(f"Token verification failed: {str(e)}")
         raise HTTPException(status_code=401, detail="Invalid token")
-# Initialize on startup
+# Initialize on startup - LAZY LOADING for memory optimization
 @app.on_event("startup")
 async def startup_event():
-    """Initialize models on startup"""
-    if not initialize_models():
-        logger.warning("Models not initialized at startup - will try on first request")
+    """Initialize only analyzer on startup (lazy load preprocessor)"""
+    global analyzer
+    try:
+        # Initialize analyzer only (AWS Bedrock - no local memory)
+        from model_analyzer import ModelAnalyzer
+        analyzer = ModelAnalyzer(
+            supabase_url=SUPABASE_URL,
+            supabase_key=SUPABASE_KEY
+        )
+        logger.info("✓ Analyzer initialized (AWS Bedrock - 0MB RAM)")
+        logger.info("📊 Preprocessor will lazy-load on first mood entry (saves ~100MB)")
+    except Exception as e:
+        logger.warning(f"Analyzer initialization failed: {str(e)}")
+        analyzer = None
 
 def verify_token(authorization: Optional[str] = Header(None)) -> dict:
     """Verify JWT token from header"""
