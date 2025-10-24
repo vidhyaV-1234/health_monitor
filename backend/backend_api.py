@@ -514,6 +514,9 @@ async def submit_mood(
     """Submit mood entry: accepts JSON with URLs or form-data with files"""
     logger.info("=== MOOD ENDPOINT CALLED ===")
     try:
+        # Log all headers for debugging
+        logger.info(f"Request headers: {dict(request.headers)}")
+        
         content_type = request.headers.get("content-type", "")
         logger.info(f"Content-Type: {content_type}")
         
@@ -522,10 +525,21 @@ async def submit_mood(
             import json as json_lib
             body_bytes = await request.body()
             logger.info(f"Raw body length: {len(body_bytes)}")
-            logger.info(f"Raw body preview: {body_bytes[:200]}")
+            logger.info(f"Raw body preview: {body_bytes[:500]}")
             
-            data = json_lib.loads(body_bytes)
-            logger.info(f"Parsed JSON data: {data}")
+            if len(body_bytes) == 0:
+                logger.error("ERROR: Request body is EMPTY!")
+                raise HTTPException(status_code=400, detail="Request body is empty")
+            
+            try:
+                data = json_lib.loads(body_bytes)
+                logger.info(f"✓ Successfully parsed JSON data")
+                logger.info(f"Data keys: {list(data.keys())}")
+                logger.info(f"Full data: {data}")
+            except Exception as parse_error:
+                logger.error(f"ERROR parsing JSON: {str(parse_error)}")
+                logger.error(f"Body content: {body_bytes.decode('utf-8', errors='replace')}")
+                raise HTTPException(status_code=400, detail=f"Invalid JSON: {str(parse_error)}")
             
             user_id = data.get("id")
             mood_text = data.get("mood_text")

@@ -140,8 +140,17 @@ export default function MoodEntry({ user }) {
         };
 
         console.log("📤 Sending payload to backend:", payload);
+        console.log("🔍 Payload details:", {
+          id: payload.id,
+          id_type: typeof payload.id,
+          mood_text: payload.mood_text,
+          mood_text_type: typeof payload.mood_text,
+          audio_url: payload.audio_url,
+          image_url: payload.image_url
+        });
         console.log("🌐 API URL:", API_BASE_URL);
         console.log("🔑 Token present:", !!token);
+        console.log("📋 Stringified payload:", JSON.stringify(payload));
 
         response = await axios.post(`${API_BASE_URL}/api/mood`, payload, {
           headers: {
