@@ -257,14 +257,25 @@ export default function MoodEntry({ user }) {
             <h1 className="text-2xl font-bold gradient-text">mood flow</h1>
           </div>
           <div className="flex items-center space-x-4">
-            <button
-              onClick={() => navigate("/profile/view")}
-              className="px-4 py-2 bg-purple-500 text-white rounded-full hover:bg-purple-600 transition-all hover:scale-105 flex items-center space-x-2"
-              title="View Profile"
-            >
-              <span>👤</span>
-              <span>Profile</span>
-            </button>
+            {user?.hasProfile ? (
+              <button
+                onClick={() => navigate("/profile/view")}
+                className="px-4 py-2 bg-purple-500 text-white rounded-full hover:bg-purple-600 transition-all hover:scale-105 flex items-center space-x-2"
+                title="View Profile"
+              >
+                <span>👤</span>
+                <span>Profile</span>
+              </button>
+            ) : (
+              <button
+                onClick={() => navigate("/profile")}
+                className="px-4 py-2 bg-green-500 text-white rounded-full hover:bg-green-600 transition-all hover:scale-105 flex items-center space-x-2"
+                title="Complete Profile"
+              >
+                <span>📝</span>
+                <span>Complete Profile</span>
+              </button>
+            )}
             <button
               onClick={handleLogout}
               className="px-4 py-2 bg-red-500 text-white rounded-full hover:bg-red-600 transition-all hover:scale-105"

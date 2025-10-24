@@ -66,6 +66,19 @@ export default function ProfileForm({ user, isEditMode = false, isViewMode = fal
       console.error("Error fetching profile:", err);
       console.error("Error response:", err.response?.data);
       console.error("Error status:", err.response?.status);
+      
+      // If profile doesn't exist (404), redirect to create profile
+      if (err.response?.status === 404) {
+        console.log("No profile found, redirecting to create profile");
+        setError("You haven't created a profile yet. Please complete your profile first.");
+        setFetchingProfile(false);
+        // Redirect to mood page after 2 seconds
+        setTimeout(() => {
+          navigate("/profile");
+        }, 2000);
+        return;
+      }
+      
       setError("Could not load profile data: " + (err.response?.data?.detail || err.message));
     } finally {
       setFetchingProfile(false);
