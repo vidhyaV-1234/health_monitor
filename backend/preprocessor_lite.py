@@ -1,10 +1,9 @@
 """
 Lightweight Preprocessor for Multimodal Inputs
-Uses small open-source models - works on Render free tier
+Uses lightweight models that work on Render free tier
 """
 
 import speech_recognition as sr
-from vosk import Model, KaldiRecognizer
 from fer import FER
 from PIL import Image
 import cv2
@@ -13,53 +12,33 @@ import warnings
 from pathlib import Path
 from supabase import create_client, Client
 import json
-import wave
 
 warnings.filterwarnings("ignore")
 
 class MultimodalPreprocessor:
     """
-    Lightweight preprocessor using open-source models:
-    - Audio: Vosk (offline speech recognition, ~50MB)
-    - Image: FER (Facial Emotion Recognition, ~30MB)
-    - Total: ~100MB (works on Render free tier!)
+    Lightweight preprocessor:
+    - Audio: Google Speech Recognition (free cloud API, no download)
+    - Image: FER (Facial Emotion Recognition, ~30MB open-source model)
+    - Works on Render free tier!
     """
     
     def __init__(self):
-        """Initialize lightweight open-source models"""
+        """Initialize lightweight models"""
         print("="*70)
-        print("INITIALIZING LIGHTWEIGHT OPEN-SOURCE PREPROCESSOR")
+        print("INITIALIZING LIGHTWEIGHT PREPROCESSOR")
         print("="*70)
         
-        # Initialize Vosk model for speech recognition
-        print("\n🎤 Initializing Vosk Speech Recognition...")
-        try:
-            # Use small English model (~50MB)
-            model_path = "vosk-model-small-en-us-0.15"
-            if not os.path.exists(model_path):
-                print("📥 Downloading Vosk model (one-time, ~50MB)...")
-                import urllib.request
-                import zipfile
-                url = "https://alphacephei.com/vosk/models/vosk-model-small-en-us-0.15.zip"
-                urllib.request.urlretrieve(url, "vosk-model.zip")
-                with zipfile.ZipFile("vosk-model.zip", 'r') as zip_ref:
-                    zip_ref.extractall(".")
-                os.remove("vosk-model.zip")
-            
-            self.vosk_model = Model(model_path)
-            self.recognizer = sr.Recognizer()
-            print("✓ Vosk model loaded (offline speech recognition)")
-        except Exception as e:
-            print(f"⚠️ Vosk initialization failed: {str(e)}")
-            print("⚠️ Falling back to Google Speech Recognition")
-            self.vosk_model = None
-            self.recognizer = sr.Recognizer()
+        # Initialize speech recognizer (uses Google's free API)
+        print("\n🎤 Initializing Speech Recognition...")
+        self.recognizer = sr.Recognizer()
+        print("✓ Speech recognizer ready (Google Speech API - free)")
         
         # Initialize FER for emotion detection
         print("\n😊 Initializing FER (Facial Emotion Recognition)...")
         try:
             self.emotion_detector = FER(mtcnn=True)
-            print("✓ FER model loaded (emotion detection from faces)")
+            print("✓ FER model loaded (~30MB, open-source)")
         except Exception as e:
             print(f"⚠️ FER initialization failed: {str(e)}")
             self.emotion_detector = None
@@ -81,7 +60,7 @@ class MultimodalPreprocessor:
     
     def transcribe_audio(self, audio_path):
         """
-        Transcribe audio using Vosk (offline) or Google Speech Recognition (fallback)
+        Transcribe audio using Google Speech Recognition (free)
         
         Args:
             audio_path: Path to audio file
@@ -95,39 +74,12 @@ class MultimodalPreprocessor:
         try:
             print(f"\n🎤 Transcribing audio: {audio_path}")
             
-            # Try Vosk first (offline)
-            if self.vosk_model:
-                try:
-                    wf = wave.open(audio_path, "rb")
-                    rec = KaldiRecognizer(self.vosk_model, wf.getframerate())
-                    
-                    transcript_parts = []
-                    while True:
-                        data = wf.readframes(4000)
-                        if len(data) == 0:
-                            break
-                        if rec.AcceptWaveform(data):
-                            result = json.loads(rec.Result())
-                            transcript_parts.append(result.get("text", ""))
-                    
-                    # Get final result
-                    final_result = json.loads(rec.FinalResult())
-                    transcript_parts.append(final_result.get("text", ""))
-                    
-                    transcript = " ".join(transcript_parts).strip()
-                    if transcript:
-                        print(f"✓ Vosk transcription: '{transcript[:100]}...'")
-                        return transcript
-                except Exception as vosk_error:
-                    print(f"⚠️ Vosk transcription failed: {str(vosk_error)}")
-            
-            # Fallback to Google Speech Recognition
-            print("⚠️ Trying Google Speech Recognition...")
+            # Use Google Speech Recognition
             with sr.AudioFile(audio_path) as source:
                 audio_data = self.recognizer.record(source)
             
             transcript = self.recognizer.recognize_google(audio_data)
-            print(f"✓ Google transcription: '{transcript[:100]}...'")
+            print(f"✓ Transcription: '{transcript[:100]}...'")
             return transcript
             
         except sr.UnknownValueError:
