@@ -512,6 +512,7 @@ async def submit_mood(
     request: Request
 ):
     """Submit mood entry: accepts JSON with URLs or form-data with files"""
+    global preprocessor, analyzer  # Access global model instances
     logger.info("=== MOOD ENDPOINT CALLED ===")
     try:
         # Log all headers for debugging
