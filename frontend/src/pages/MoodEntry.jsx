@@ -3,7 +3,7 @@ import axios from "axios";
 import { API_BASE_URL } from "../config";
 import MasonryGrid from "../components/MasonryGrid";
 import NotificationBanner from "../components/NotificationBanner";
-import { supabase, uploadToBucket } from "../utils/supabase";
+import { isConfigured as supaConfigured, uploadToBucket } from "../utils/supabase";
 
 export default function MoodEntry({ user }) {
   const [form, setForm] = useState({
@@ -64,7 +64,7 @@ export default function MoodEntry({ user }) {
       const ts = new Date().toISOString().replace(/[-:.TZ]/g, "").slice(0, 14);
       const folder = `${form.id}`;
 
-      if (!supabase) throw new Error("Supabase client not initialized");
+      if (!supaConfigured) throw new Error("Supabase is not configured on the frontend");
 
       if (form.mood_audio) {
         const audioPath = `${folder}/${ts}_${form.mood_audio.name}`;
