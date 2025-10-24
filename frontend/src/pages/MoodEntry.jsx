@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import axios from "axios";
 import { API_BASE_URL } from "../config";
 import MasonryGrid from "../components/MasonryGrid";
@@ -6,6 +7,7 @@ import NotificationBanner from "../components/NotificationBanner";
 import { isConfigured as supaConfigured, uploadFileAndGetUrl } from "../utils/supabase";
 
 export default function MoodEntry({ user }) {
+  const navigate = useNavigate();
   const [form, setForm] = useState({
     id: "",
     mood_text: "",
@@ -255,6 +257,14 @@ export default function MoodEntry({ user }) {
             <h1 className="text-2xl font-bold gradient-text">mood flow</h1>
           </div>
           <div className="flex items-center space-x-4">
+            <button
+              onClick={() => navigate("/profile/edit")}
+              className="px-4 py-2 bg-purple-500 text-white rounded-full hover:bg-purple-600 transition-all hover:scale-105 flex items-center space-x-2"
+              title="Edit Profile"
+            >
+              <span>⚙️</span>
+              <span>Edit Profile</span>
+            </button>
             <button
               onClick={handleLogout}
               className="px-4 py-2 bg-red-500 text-white rounded-full hover:bg-red-600 transition-all hover:scale-105"

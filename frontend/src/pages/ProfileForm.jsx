@@ -1,9 +1,9 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import axios from "axios";
 import { useNavigate } from "react-router-dom";
 import { API_BASE_URL } from "../config";
 
-export default function ProfileForm({ onComplete }) {
+export default function ProfileForm({ user, isEditMode = false, onComplete }) {
   const [form, setForm] = useState({
     id: "",
     screetime_daily: "",
@@ -27,9 +27,39 @@ export default function ProfileForm({ onComplete }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [step, setStep] = useState(1);
+  const [fetchingProfile, setFetchingProfile] = useState(isEditMode);
   const navigate = useNavigate();
 
   const token = localStorage.getItem("token");
+
+  // Fetch existing profile data when in edit mode
+  useEffect(() => {
+    if (isEditMode && user?.id) {
+      fetchProfileData(user.id);
+    }
+  }, [isEditMode, user]);
+
+  const fetchProfileData = async (userId) => {
+    try {
+      setFetchingProfile(true);
+      const response = await axios.get(`${API_BASE_URL}/api/habit/${userId}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      
+      if (response.data) {
+        // Update form with existing data
+        setForm(prevForm => ({
+          ...prevForm,
+          ...response.data
+        }));
+      }
+    } catch (err) {
+      console.error("Error fetching profile:", err);
+      setError("Could not load profile data");
+    } finally {
+      setFetchingProfile(false);
+    }
+  };
 
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -58,7 +88,11 @@ export default function ProfileForm({ onComplete }) {
         },
       });
       
-      alert("✅ Profile saved successfully! Generating your initial report...");
+      if (isEditMode) {
+        alert("✅ Profile updated successfully!");
+      } else {
+        alert("✅ Profile saved successfully! Generating your initial report...");
+      }
       
       // Notify parent component
       if (onComplete) {
@@ -83,6 +117,18 @@ export default function ProfileForm({ onComplete }) {
     setStep(step - 1);
   };
 
+  // Show loading state when fetching profile
+  if (fetchingProfile) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-green-50 via-blue-50 to-purple-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-purple-600 mx-auto"></div>
+          <p className="mt-4 text-gray-600">Loading your profile...</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-green-50 via-blue-50 to-purple-50 py-8 relative overflow-hidden">
       {/* Animated Background Elements */}
@@ -95,9 +141,24 @@ export default function ProfileForm({ onComplete }) {
       <div className="max-w-3xl mx-auto px-4 relative z-10">
         {/* Header */}
         <div className="text-center mb-8">
-          <div className="text-6xl mb-4 animate-bounce">📝</div>
-          <h1 className="text-3xl font-bold gradient-text mb-2">Complete Your Profile</h1>
-          <p className="text-gray-600">Help us personalize your wellness journey</p>
+          {isEditMode && (
+            <button
+              onClick={() => navigate("/mood")}
+              className="mb-4 px-4 py-2 bg-gray-500 text-white rounded-full hover:bg-gray-600 transition-all inline-flex items-center space-x-2"
+            >
+              <span>←</span>
+              <span>Back to Mood Entry</span>
+            </button>
+          )}
+          <div className="text-6xl mb-4 animate-bounce">
+            {isEditMode ? "⚙️" : "📝"}
+          </div>
+          <h1 className="text-3xl font-bold gradient-text mb-2">
+            {isEditMode ? "Edit Your Profile" : "Complete Your Profile"}
+          </h1>
+          <p className="text-gray-600">
+            {isEditMode ? "Update your wellness preferences" : "Help us personalize your wellness journey"}
+          </p>
           
           {/* Progress Bar */}
           <div className="mt-6 max-w-md mx-auto">
