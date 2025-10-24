@@ -23,9 +23,10 @@ function App() {
     }
 
     try {
-      // Verify token and get user info
+      // Verify token and get user info (quick timeout to avoid hanging during local dev)
       const response = await axios.get(`${API_BASE_URL}/api/auth/me`, {
-        headers: { Authorization: `Bearer ${token}` }
+        headers: { Authorization: `Bearer ${token}` },
+        timeout: 7000,
       });
       setUser(response.data);
     } catch (error) {
