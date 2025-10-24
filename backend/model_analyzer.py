@@ -19,10 +19,26 @@ class ModelAnalyzer:
         print("INITIALIZING MODEL ANALYZER")
         print("="*70)
         
-        # Initialize Bedrock Runtime client
+        # Initialize Bedrock Runtime client with explicit credentials
         print(f"\n🔗 Initializing AWS Bedrock client...")
         try:
-            self.bedrock_client = boto3.client("bedrock-runtime", region_name="us-east-1")
+            # Get credentials from environment
+            aws_access_key = os.getenv("AWS_ACCESS_KEY_ID")
+            aws_secret_key = os.getenv("AWS_SECRET_ACCESS_KEY")
+            aws_region = os.getenv("AWS_REGION", "us-east-1")
+            
+            if not aws_access_key or not aws_secret_key:
+                raise ValueError("AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY must be set in environment variables")
+            
+            print(f"  → Region: {aws_region}")
+            print(f"  → Access Key: {aws_access_key[:8]}... (masked)")
+            
+            self.bedrock_client = boto3.client(
+                "bedrock-runtime",
+                region_name=aws_region,
+                aws_access_key_id=aws_access_key,
+                aws_secret_access_key=aws_secret_key
+            )
             self.model_id = "us.anthropic.claude-3-5-sonnet-20241022-v2:0"
             print(f"✓ AWS Bedrock client initialized successfully")
             print(f"  → API: AWS Bedrock")

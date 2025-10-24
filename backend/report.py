@@ -10,13 +10,26 @@ SUPABASE_URL = os.getenv("SUPABASE_URL","https://cswobvpopxypghwjolnb.supabase.c
 SUPABASE_KEY = os.getenv("SUPABASE_KEY","eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNzd29idnBvcHh5cGdod2pvbG5iIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjA4NzQ5ODMsImV4cCI6MjA3NjQ1MDk4M30.P_E9zrpgOAI-mDVCCSWQDYLbfSXbng67EIApxujhNtQ")
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-# Initialize AWS Bedrock client
-BEDROCK_CLIENT = boto3.client("bedrock-runtime", region_name="us-east-1")
+# Initialize AWS Bedrock client with explicit credentials
+aws_access_key = os.getenv("AWS_ACCESS_KEY_ID")
+aws_secret_key = os.getenv("AWS_SECRET_ACCESS_KEY")
+aws_region = os.getenv("AWS_REGION", "us-east-1")
+
+if not aws_access_key or not aws_secret_key:
+    raise ValueError("AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY must be set in environment variables")
+
+BEDROCK_CLIENT = boto3.client(
+    "bedrock-runtime",
+    region_name=aws_region,
+    aws_access_key_id=aws_access_key,
+    aws_secret_access_key=aws_secret_key
+)
 MODEL_ID = "us.anthropic.claude-3-5-sonnet-20241022-v2:0"
 
 print(f"✓ AWS Bedrock client initialized")
 print(f"  → API: AWS Bedrock")
 print(f"  → Model: Claude 3.5 Sonnet")
+print(f"  → Region: {aws_region}")
 
 # Define column descriptions for better context (used only for first report) 
 COLUMN_DESCRIPTIONS = {
