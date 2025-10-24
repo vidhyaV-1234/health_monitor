@@ -572,15 +572,33 @@ async def submit_mood(
                 logger.info(f"Downloaded image to: {image_path}")
             
             # Process with ML models
+            logger.info(f"🔍 Model availability check - preprocessor: {preprocessor is not None}, analyzer: {analyzer is not None}")
+            
+            if not preprocessor or not analyzer:
+                logger.warning("⚠️ Models not initialized, attempting to initialize...")
+                initialize_models()
+                logger.info(f"After init - preprocessor: {preprocessor is not None}, analyzer: {analyzer is not None}")
+            
             if preprocessor and analyzer:
-                logger.info("Using ML models with downloaded files")
-                preprocessed_data = preprocessor.preprocess(
-                    audio_path=audio_path,
-                    image_path=image_path,
-                    text_input=mood_text,
-                    user_id=user_id,
-                    analyze=True
-                )
+                logger.info("✓ Using ML models with downloaded files")
+                logger.info(f"📝 Inputs - text: {mood_text[:50] if mood_text else 'None'}, audio: {audio_path}, image: {image_path}")
+                
+                try:
+                    preprocessed_data = preprocessor.preprocess(
+                        audio_path=audio_path,
+                        image_path=image_path,
+                        text_input=mood_text,
+                        user_id=user_id,
+                        analyze=True
+                    )
+                    logger.info(f"✓ Preprocessing completed successfully")
+                    logger.info(f"📊 Result keys: {list(preprocessed_data.keys())}")
+                except Exception as preprocess_error:
+                    logger.error(f"❌ Preprocessing error: {str(preprocess_error)}")
+                    logger.error(f"Error details: {type(preprocess_error).__name__}")
+                    import traceback
+                    logger.error(traceback.format_exc())
+                    raise
                 
                 # Cleanup temp files
                 if audio_path and os.path.exists(audio_path):
@@ -625,7 +643,10 @@ async def submit_mood(
                     }
                 })
             
-            # Fallback
+            # Fallback - models not available
+            logger.warning("⚠️ USING FALLBACK ANALYSIS - ML models not available")
+            logger.warning(f"Preprocessor available: {preprocessor is not None}")
+            logger.warning(f"Analyzer available: {analyzer is not None}")
             mood_analysis = analyze_mood_text(mood_text)
             return JSONResponse({
                 "status": "success",
