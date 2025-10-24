@@ -112,7 +112,7 @@ def initialize_models():
         try:
             from preprocessor_lite import MultimodalPreprocessor
             preprocessor = MultimodalPreprocessor()
-            logger.info("✓ Lightweight Preprocessor initialized (Google Speech + AWS Rekognition)")
+            logger.info("✓ Lightweight Preprocessor initialized (Google Speech + Hugging Face Emotion)")
         except Exception as e:
             logger.warning(f"Preprocessor initialization failed: {str(e)}")
             preprocessor = None

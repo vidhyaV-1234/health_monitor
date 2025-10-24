@@ -4,9 +4,7 @@ Uses lightweight models that work on Render free tier
 """
 
 import speech_recognition as sr
-from fer import FER
 from PIL import Image
-import cv2
 import os
 import warnings
 from pathlib import Path
@@ -19,7 +17,7 @@ class MultimodalPreprocessor:
     """
     Lightweight preprocessor:
     - Audio: Google Speech Recognition (free cloud API, no download)
-    - Image: FER (Facial Emotion Recognition, ~30MB open-source model)
+    - Image: Hugging Face emotion model (~100MB, lightweight)
     - Works on Render free tier!
     """
     
@@ -34,13 +32,19 @@ class MultimodalPreprocessor:
         self.recognizer = sr.Recognizer()
         print("✓ Speech recognizer ready (Google Speech API - free)")
         
-        # Initialize FER for emotion detection
-        print("\n😊 Initializing FER (Facial Emotion Recognition)...")
+        # Initialize emotion detection model (Hugging Face - lightweight)
+        print("\n😊 Initializing Emotion Detection Model...")
         try:
-            self.emotion_detector = FER(mtcnn=True)
-            print("✓ FER model loaded (~30MB, open-source)")
+            from transformers import pipeline
+            # Use a small, efficient emotion detection model
+            self.emotion_detector = pipeline(
+                "image-classification",
+                model="dima806/facial_emotions_image_detection",
+                device=-1  # Use CPU
+            )
+            print("✓ Emotion model loaded (~100MB, Hugging Face)")
         except Exception as e:
-            print(f"⚠️ FER initialization failed: {str(e)}")
+            print(f"⚠️ Emotion model initialization failed: {str(e)}")
             self.emotion_detector = None
         
         # Initialize Supabase client for storage operations
@@ -94,7 +98,7 @@ class MultimodalPreprocessor:
     
     def detect_emotion(self, image_path):
         """
-        Detect emotion using FER (Facial Emotion Recognition)
+        Detect emotion using Hugging Face emotion model
         
         Args:
             image_path: Path to image file
@@ -106,39 +110,32 @@ class MultimodalPreprocessor:
             return None, 0.0, {}
         
         if not self.emotion_detector:
-            print("⚠️ FER emotion detector not available")
+            print("⚠️ Emotion detector not available")
             return None, 0.0, {}
         
         try:
             print(f"\n😊 Detecting emotion from: {image_path}")
             
-            # Read image with OpenCV
-            img = cv2.imread(image_path)
-            if img is None:
-                print("⚠️ Could not read image")
+            # Load image with PIL
+            img = Image.open(image_path).convert("RGB")
+            
+            # Run emotion detection
+            results = self.emotion_detector(img)
+            
+            if not results or len(results) == 0:
+                print("⚠️ No emotion detected in image")
                 return None, 0.0, {}
             
-            # Detect emotions
-            result = self.emotion_detector.detect_emotions(img)
+            # Get top emotion
+            top_result = results[0]
+            emotion_name = top_result['label'].capitalize()
+            confidence = top_result['score']
             
-            if not result or len(result) == 0:
-                print("⚠️ No face detected in image")
-                return None, 0.0, {}
+            # Prepare all emotions dict
+            all_emotions = {result['label'].capitalize(): result['score'] for result in results}
             
-            # Get the first face's emotions
-            face_emotions = result[0]['emotions']
-            
-            # Find top emotion
-            top_emotion = max(face_emotions, key=face_emotions.get)
-            confidence = face_emotions[top_emotion]
-            
-            # Capitalize emotion name
-            emotion_name = top_emotion.capitalize()
-            
-            # Prepare details
             details = {
-                'all_emotions': face_emotions,
-                'face_box': result[0]['box']
+                'all_emotions': all_emotions
             }
             
             print(f"✓ Detected emotion: {emotion_name} ({confidence:.2%} confidence)")
@@ -146,6 +143,8 @@ class MultimodalPreprocessor:
             
         except Exception as e:
             print(f"❌ Emotion detection failed: {str(e)}")
+            import traceback
+            traceback.print_exc()
             return None, 0.0, {}
     
     def preprocess(self, audio_path=None, image_path=None, text_input=None, 
