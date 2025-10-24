@@ -132,13 +132,14 @@ class MultimodalPreprocessor:
             
             emotions = result['emotion']
             dominant_emotion = result.get('dominant_emotion', max(emotions, key=emotions.get))
-            confidence = emotions.get(dominant_emotion, 0) / 100.0  # Convert to 0-1 scale
+            confidence = float(emotions.get(dominant_emotion, 0)) / 100.0  # Convert to Python float
             
             # Capitalize emotion name
-            emotion_name = dominant_emotion.capitalize()
+            emotion_name = str(dominant_emotion).capitalize()
             
+            # Convert all numpy types to Python native types for JSON serialization
             details = {
-                'all_emotions': {k.capitalize(): v/100.0 for k, v in emotions.items()}
+                'all_emotions': {str(k).capitalize(): float(v)/100.0 for k, v in emotions.items()}
             }
             
             print(f"✓ Detected emotion: {emotion_name} ({confidence:.2%} confidence)")
@@ -192,9 +193,9 @@ class MultimodalPreprocessor:
         if image_path:
             emotion, confidence, details = self.detect_emotion(image_path)
             if emotion:
-                result["emotion"] = emotion
-                result["emotion_confidence"] = confidence
-                result["emotion_details"] = details
+                result["emotion"] = str(emotion)  # Ensure string
+                result["emotion_confidence"] = float(confidence)  # Ensure Python float
+                result["emotion_details"] = details  # Already converted in detect_emotion
                 result["has_image"] = True
         
         # Summary
