@@ -3,7 +3,7 @@ FastAPI Backend for Wellness Activity Recommender
 Serves HTML/JS frontend and provides API endpoints for AI analysis via AWS Bedrock Claude
 """
 
-from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Depends, Header
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Depends, Header, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -16,6 +16,8 @@ import logging
 from typing import Optional
 import jwt
 from dotenv import load_dotenv
+import requests
+import tempfile
 
 
 # Load environment variables from .env file
@@ -505,15 +507,22 @@ async def save_profile(
         logger.error(f"Error saving profile: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Profile save error: {str(e)}")
 
+class MoodSubmission(BaseModel):
+    id: str
+    mood_text: str
+    audio_url: Optional[str] = None
+    image_url: Optional[str] = None
+
 @app.post("/api/mood")
 async def submit_mood(
-    id: str = Form(...),
+    mood_data: MoodSubmission = None,
     user_id_obj: dict = Depends(verify_token),
-    mood_text: str = Form(...),
+    id: str = Form(None),
+    mood_text: str = Form(None),
     mood_audio: UploadFile = File(None),
     mood_image: UploadFile = File(None)
 ):
-    """Submit mood entry: store raw inputs in Supabase Storage, then trigger preprocessing by user id"""
+    """Submit mood entry: accepts either JSON with URLs or multipart form with files"""
     try:
         # Use the id from the form parameter directly
         logger.info(f"Processing mood entry for user: {id}")

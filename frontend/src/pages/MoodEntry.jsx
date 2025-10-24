@@ -3,7 +3,7 @@ import axios from "axios";
 import { API_BASE_URL } from "../config";
 import MasonryGrid from "../components/MasonryGrid";
 import NotificationBanner from "../components/NotificationBanner";
-import { isConfigured as supaConfigured, uploadToBucket } from "../utils/supabase";
+import { isConfigured as supaConfigured, uploadFileAndGetUrl } from "../utils/supabase";
 
 export default function MoodEntry({ user }) {
   const [form, setForm] = useState({
@@ -61,40 +61,49 @@ export default function MoodEntry({ user }) {
     try {
       let response;
       if (supaConfigured) {
-        // 1) Upload media to Supabase Storage from the frontend
-        const bucket = import.meta.env.VITE_SUPABASE_MEDIA_BUCKET || "mood-media";
-        const ts = new Date().toISOString().replace(/[-:.TZ]/g, "").slice(0, 14);
-        const folder = `${form.id}`;
+        // 1) Upload media to Supabase Storage and get public URLs
+        const bucket = import.meta.env.VITE_SUPABASE_MEDIA_BUCKET || "mood_media";
+        const folder = form.id;
+
+        console.log("📤 Uploading to Supabase:", { bucket, folder, supaConfigured });
+
+        let audioUrl = null;
+        let imageUrl = null;
 
         if (form.mood_audio) {
-          const audioPath = `${folder}/${ts}_${form.mood_audio.name}`;
-          await uploadToBucket({
+          console.log("🎤 Uploading audio...");
+          const result = await uploadFileAndGetUrl({
             bucket,
-            path: audioPath,
             file: form.mood_audio,
-            contentType: form.mood_audio.type || "application/octet-stream",
+            folder,
           });
+          audioUrl = result.publicUrl;
+          console.log("✓ Audio uploaded:", audioUrl);
         }
 
         if (form.mood_image) {
-          const imagePath = `${folder}/${ts}_${form.mood_image.name}`;
-          await uploadToBucket({
+          console.log("📷 Uploading image...");
+          const result = await uploadFileAndGetUrl({
             bucket,
-            path: imagePath,
             file: form.mood_image,
-            contentType: form.mood_image.type || "application/octet-stream",
+            folder,
           });
+          imageUrl = result.publicUrl;
+          console.log("✓ Image uploaded:", imageUrl);
         }
 
-        // Send only id and text; backend will fetch media from storage
-        const formData = new FormData();
-        formData.append("id", form.id);
-        formData.append("mood_text", form.mood_text);
+        // Send id, text, and URLs to backend
+        const payload = {
+          id: form.id,
+          mood_text: form.mood_text,
+          audio_url: audioUrl,
+          image_url: imageUrl,
+        };
 
-        response = await axios.post(`${API_BASE_URL}/api/mood`, formData, {
+        response = await axios.post(`${API_BASE_URL}/api/mood`, payload, {
           headers: {
             Authorization: `Bearer ${token}`,
-            "Content-Type": "multipart/form-data",
+            "Content-Type": "application/json",
           },
         });
       } else {
