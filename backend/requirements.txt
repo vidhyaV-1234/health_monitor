@@ -25,6 +25,7 @@ fer>=22.5.1  # Facial Emotion Recognition (~30MB, open-source)
 opencv-python-headless>=4.8.0  # Required by FER
 Pillow>=10.0.0  # Image handling
 tensorflow>=2.20.0  # Use latest version compatible with Python 3.13
+moviepy>=1.0.3  # Required by FER
 
 # Prevent Rust build issues on Render
 --only-binary :all:
