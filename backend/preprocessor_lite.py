@@ -1,46 +1,68 @@
 """
 Lightweight Preprocessor for Multimodal Inputs
-Uses cloud APIs instead of heavy local models - works on Render free tier
+Uses small open-source models - works on Render free tier
 """
 
 import speech_recognition as sr
-import boto3
+from vosk import Model, KaldiRecognizer
+from fer import FER
 from PIL import Image
+import cv2
 import os
 import warnings
 from pathlib import Path
 from supabase import create_client, Client
 import json
+import wave
 
 warnings.filterwarnings("ignore")
 
 class MultimodalPreprocessor:
     """
-    Lightweight preprocessor using cloud APIs:
-    - Audio: Google Speech Recognition (free)
-    - Image: AWS Rekognition (emotion detection)
-    - No heavy models to download!
+    Lightweight preprocessor using open-source models:
+    - Audio: Vosk (offline speech recognition, ~50MB)
+    - Image: FER (Facial Emotion Recognition, ~30MB)
+    - Total: ~100MB (works on Render free tier!)
     """
     
     def __init__(self):
-        """Initialize lightweight preprocessor with cloud APIs"""
+        """Initialize lightweight open-source models"""
         print("="*70)
-        print("INITIALIZING LIGHTWEIGHT MULTIMODAL PREPROCESSOR")
+        print("INITIALIZING LIGHTWEIGHT OPEN-SOURCE PREPROCESSOR")
         print("="*70)
         
-        # Initialize speech recognizer (no model download needed!)
-        print("\n🎤 Initializing Speech Recognition...")
-        self.recognizer = sr.Recognizer()
-        print("✓ Speech recognizer ready (using Google Speech API)")
-        
-        # Initialize AWS Rekognition for emotion detection
-        print("\n😊 Initializing AWS Rekognition...")
+        # Initialize Vosk model for speech recognition
+        print("\n🎤 Initializing Vosk Speech Recognition...")
         try:
-            self.rekognition = boto3.client('rekognition', region_name='us-east-1')
-            print("✓ AWS Rekognition initialized")
+            # Use small English model (~50MB)
+            model_path = "vosk-model-small-en-us-0.15"
+            if not os.path.exists(model_path):
+                print("📥 Downloading Vosk model (one-time, ~50MB)...")
+                import urllib.request
+                import zipfile
+                url = "https://alphacephei.com/vosk/models/vosk-model-small-en-us-0.15.zip"
+                urllib.request.urlretrieve(url, "vosk-model.zip")
+                with zipfile.ZipFile("vosk-model.zip", 'r') as zip_ref:
+                    zip_ref.extractall(".")
+                os.remove("vosk-model.zip")
+            
+            self.vosk_model = Model(model_path)
+            self.recognizer = sr.Recognizer()
+            print("✓ Vosk model loaded (offline speech recognition)")
         except Exception as e:
-            print(f"⚠️ AWS Rekognition initialization failed: {str(e)}")
-            self.rekognition = None
+            print(f"⚠️ Vosk initialization failed: {str(e)}")
+            print("⚠️ Falling back to Google Speech Recognition")
+            self.vosk_model = None
+            self.recognizer = sr.Recognizer()
+        
+        # Initialize FER for emotion detection
+        print("\n😊 Initializing FER (Facial Emotion Recognition)...")
+        try:
+            self.emotion_detector = FER(mtcnn=True)
+            print("✓ FER model loaded (emotion detection from faces)")
+        except Exception as e:
+            print(f"⚠️ FER initialization failed: {str(e)}")
+            self.emotion_detector = None
         
         # Initialize Supabase client for storage operations
         SUPABASE_URL = os.getenv("SUPABASE_URL")
@@ -59,7 +81,7 @@ class MultimodalPreprocessor:
     
     def transcribe_audio(self, audio_path):
         """
-        Transcribe audio using Google Speech Recognition (free)
+        Transcribe audio using Vosk (offline) or Google Speech Recognition (fallback)
         
         Args:
             audio_path: Path to audio file
@@ -73,14 +95,39 @@ class MultimodalPreprocessor:
         try:
             print(f"\n🎤 Transcribing audio: {audio_path}")
             
-            # Load audio file
+            # Try Vosk first (offline)
+            if self.vosk_model:
+                try:
+                    wf = wave.open(audio_path, "rb")
+                    rec = KaldiRecognizer(self.vosk_model, wf.getframerate())
+                    
+                    transcript_parts = []
+                    while True:
+                        data = wf.readframes(4000)
+                        if len(data) == 0:
+                            break
+                        if rec.AcceptWaveform(data):
+                            result = json.loads(rec.Result())
+                            transcript_parts.append(result.get("text", ""))
+                    
+                    # Get final result
+                    final_result = json.loads(rec.FinalResult())
+                    transcript_parts.append(final_result.get("text", ""))
+                    
+                    transcript = " ".join(transcript_parts).strip()
+                    if transcript:
+                        print(f"✓ Vosk transcription: '{transcript[:100]}...'")
+                        return transcript
+                except Exception as vosk_error:
+                    print(f"⚠️ Vosk transcription failed: {str(vosk_error)}")
+            
+            # Fallback to Google Speech Recognition
+            print("⚠️ Trying Google Speech Recognition...")
             with sr.AudioFile(audio_path) as source:
                 audio_data = self.recognizer.record(source)
             
-            # Use Google Speech Recognition (free, no API key needed)
             transcript = self.recognizer.recognize_google(audio_data)
-            
-            print(f"✓ Transcription: '{transcript[:100]}...'")
+            print(f"✓ Google transcription: '{transcript[:100]}...'")
             return transcript
             
         except sr.UnknownValueError:
@@ -95,7 +142,7 @@ class MultimodalPreprocessor:
     
     def detect_emotion(self, image_path):
         """
-        Detect emotion using AWS Rekognition
+        Detect emotion using FER (Facial Emotion Recognition)
         
         Args:
             image_path: Path to image file
@@ -106,45 +153,40 @@ class MultimodalPreprocessor:
         if not image_path or not os.path.exists(image_path):
             return None, 0.0, {}
         
-        if not self.rekognition:
-            print("⚠️ AWS Rekognition not available")
+        if not self.emotion_detector:
+            print("⚠️ FER emotion detector not available")
             return None, 0.0, {}
         
         try:
             print(f"\n😊 Detecting emotion from: {image_path}")
             
-            # Read image
-            with open(image_path, 'rb') as image_file:
-                image_bytes = image_file.read()
+            # Read image with OpenCV
+            img = cv2.imread(image_path)
+            if img is None:
+                print("⚠️ Could not read image")
+                return None, 0.0, {}
             
-            # Detect faces and emotions
-            response = self.rekognition.detect_faces(
-                Image={'Bytes': image_bytes},
-                Attributes=['ALL']
-            )
+            # Detect emotions
+            result = self.emotion_detector.detect_emotions(img)
             
-            if not response['FaceDetails']:
+            if not result or len(result) == 0:
                 print("⚠️ No face detected in image")
                 return None, 0.0, {}
             
             # Get the first face's emotions
-            face = response['FaceDetails'][0]
-            emotions = face.get('Emotions', [])
+            face_emotions = result[0]['emotions']
             
-            if not emotions:
-                return None, 0.0, {}
+            # Find top emotion
+            top_emotion = max(face_emotions, key=face_emotions.get)
+            confidence = face_emotions[top_emotion]
             
-            # Sort by confidence and get top emotion
-            emotions.sort(key=lambda x: x['Confidence'], reverse=True)
-            top_emotion = emotions[0]
-            
-            emotion_name = top_emotion['Type'].capitalize()
-            confidence = top_emotion['Confidence'] / 100  # Convert to 0-1 scale
+            # Capitalize emotion name
+            emotion_name = top_emotion.capitalize()
             
             # Prepare details
             details = {
-                'all_emotions': {e['Type']: e['Confidence'] for e in emotions},
-                'face_confidence': face.get('Confidence', 0) / 100
+                'all_emotions': face_emotions,
+                'face_box': result[0]['box']
             }
             
             print(f"✓ Detected emotion: {emotion_name} ({confidence:.2%} confidence)")
