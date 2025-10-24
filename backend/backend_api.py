@@ -407,7 +407,7 @@ def verify_token(authorization: Optional[str] = Header(None)) -> dict:
 @app.get("/")
 async def root():
     """Redirect to API info"""
-    return {"message": "Wellness Activity Recommender API", "version": "2.0.0"}
+    return {"message": "Wellness Activity Recommender API", "version": "2.0.1", "updated": "2025-10-24"}
 
 # Mount static files from script folder
 if SCRIPT_DIR.exists():
