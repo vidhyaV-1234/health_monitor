@@ -22,6 +22,14 @@ export default function MoodEntry({ user }) {
 
   const token = localStorage.getItem("token");
 
+  // Set user ID when component mounts
+  useEffect(() => {
+    if (user && user.id) {
+      setForm(prevForm => ({ ...prevForm, id: user.id }));
+      console.log("✓ User ID set:", user.id);
+    }
+  }, [user]);
+
   const loadNotificationHistory = async (userId) => {
     if (!userId) return;
     
@@ -116,12 +124,18 @@ export default function MoodEntry({ user }) {
           image_url: imageUrl,
         };
 
+        console.log("📤 Sending payload to backend:", payload);
+        console.log("🌐 API URL:", API_BASE_URL);
+        console.log("🔑 Token present:", !!token);
+
         response = await axios.post(`${API_BASE_URL}/api/mood`, payload, {
           headers: {
             Authorization: `Bearer ${token}`,
             "Content-Type": "application/json",
           },
         });
+
+        console.log("✅ Response received:", response.status);
       } else {
         // Fallback: send files directly to backend (legacy flow)
         const formData = new FormData();
