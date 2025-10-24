@@ -66,6 +66,12 @@ export default function MoodEntry({ user }) {
         const folder = form.id;
 
         console.log("📤 Uploading to Supabase:", { bucket, folder, supaConfigured });
+        console.log("ENV CHECK:", {
+          VITE_SUPABASE_URL: import.meta.env.VITE_SUPABASE_URL,
+          VITE_SUPABASE_ANON_KEY: import.meta.env.VITE_SUPABASE_ANON_KEY ? 'SET' : 'MISSING',
+          VITE_SUPABASE_MEDIA_BUCKET: import.meta.env.VITE_SUPABASE_MEDIA_BUCKET,
+          VITE_API_URL: import.meta.env.VITE_API_URL
+        });
 
         let audioUrl = null;
         let imageUrl = null;
