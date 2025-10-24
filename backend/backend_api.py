@@ -108,11 +108,11 @@ def initialize_models():
     try:
         logger.info("Initializing models...")
         
-        # Initialize preprocessor with error handling
+        # Initialize lightweight preprocessor
         try:
-            from preprocessor import MultimodalPreprocessor
-            preprocessor = MultimodalPreprocessor(whisper_model="base")
-            logger.info("✓ Preprocessor initialized (Whisper)")
+            from preprocessor_lite import MultimodalPreprocessor
+            preprocessor = MultimodalPreprocessor()
+            logger.info("✓ Lightweight Preprocessor initialized (Google Speech + AWS Rekognition)")
         except Exception as e:
             logger.warning(f"Preprocessor initialization failed: {str(e)}")
             preprocessor = None
