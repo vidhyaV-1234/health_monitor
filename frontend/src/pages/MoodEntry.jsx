@@ -258,12 +258,12 @@ export default function MoodEntry({ user }) {
           </div>
           <div className="flex items-center space-x-4">
             <button
-              onClick={() => navigate("/profile/edit")}
+              onClick={() => navigate("/profile/view")}
               className="px-4 py-2 bg-purple-500 text-white rounded-full hover:bg-purple-600 transition-all hover:scale-105 flex items-center space-x-2"
-              title="Edit Profile"
+              title="View Profile"
             >
-              <span>⚙️</span>
-              <span>Edit Profile</span>
+              <span>👤</span>
+              <span>Profile</span>
             </button>
             <button
               onClick={handleLogout}

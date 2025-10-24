@@ -3,7 +3,7 @@ import axios from "axios";
 import { useNavigate } from "react-router-dom";
 import { API_BASE_URL } from "../config";
 
-export default function ProfileForm({ user, isEditMode = false, onComplete }) {
+export default function ProfileForm({ user, isEditMode = false, isViewMode = false, onComplete }) {
   const [form, setForm] = useState({
     id: "",
     screetime_daily: "",
@@ -27,35 +27,35 @@ export default function ProfileForm({ user, isEditMode = false, onComplete }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [step, setStep] = useState(1);
-  const [fetchingProfile, setFetchingProfile] = useState(isEditMode);
+  const [fetchingProfile, setFetchingProfile] = useState(isEditMode || isViewMode);
   const navigate = useNavigate();
 
   const token = localStorage.getItem("token");
 
-  // Fetch existing profile data when in edit mode
+  // Fetch existing profile data when in edit or view mode
   useEffect(() => {
-    if (isEditMode && user?.id) {
+    if ((isEditMode || isViewMode) && user?.id) {
       fetchProfileData(user.id);
     }
-  }, [isEditMode, user]);
+  }, [isEditMode, isViewMode, user]);
 
   const fetchProfileData = async (userId) => {
     try {
       setFetchingProfile(true);
-      const response = await axios.get(`${API_BASE_URL}/api/habit/${userId}`, {
+      const response = await axios.get(`${API_BASE_URL}/api/profile/${userId}`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       
-      if (response.data) {
+      if (response.data && response.data.data) {
         // Update form with existing data
         setForm(prevForm => ({
           ...prevForm,
-          ...response.data
+          ...response.data.data
         }));
       }
     } catch (err) {
       console.error("Error fetching profile:", err);
-      setError("Could not load profile data");
+      setError("Could not load profile data: " + (err.response?.data?.detail || err.message));
     } finally {
       setFetchingProfile(false);
     }
@@ -117,6 +117,9 @@ export default function ProfileForm({ user, isEditMode = false, onComplete }) {
     setStep(step - 1);
   };
 
+  // Disable form inputs in view mode
+  const isReadOnly = isViewMode;
+
   // Show loading state when fetching profile
   if (fetchingProfile) {
     return (
@@ -141,7 +144,7 @@ export default function ProfileForm({ user, isEditMode = false, onComplete }) {
       <div className="max-w-3xl mx-auto px-4 relative z-10">
         {/* Header */}
         <div className="text-center mb-8">
-          {isEditMode && (
+          {(isEditMode || isViewMode) && (
             <button
               onClick={() => navigate("/mood")}
               className="mb-4 px-4 py-2 bg-gray-500 text-white rounded-full hover:bg-gray-600 transition-all inline-flex items-center space-x-2"
@@ -151,14 +154,24 @@ export default function ProfileForm({ user, isEditMode = false, onComplete }) {
             </button>
           )}
           <div className="text-6xl mb-4 animate-bounce">
-            {isEditMode ? "⚙️" : "📝"}
+            {isViewMode ? "👤" : isEditMode ? "⚙️" : "📝"}
           </div>
           <h1 className="text-3xl font-bold gradient-text mb-2">
-            {isEditMode ? "Edit Your Profile" : "Complete Your Profile"}
+            {isViewMode ? "Your Profile" : isEditMode ? "Edit Your Profile" : "Complete Your Profile"}
           </h1>
           <p className="text-gray-600">
-            {isEditMode ? "Update your wellness preferences" : "Help us personalize your wellness journey"}
+            {isViewMode ? "View your wellness preferences" : isEditMode ? "Update your wellness preferences" : "Help us personalize your wellness journey"}
           </p>
+          
+          {isViewMode && (
+            <button
+              onClick={() => navigate("/profile/edit")}
+              className="mt-4 px-6 py-2 bg-purple-500 text-white rounded-full hover:bg-purple-600 transition-all inline-flex items-center space-x-2"
+            >
+              <span>✏️</span>
+              <span>Edit Profile</span>
+            </button>
+          )}
           
           {/* Progress Bar */}
           <div className="mt-6 max-w-md mx-auto">
@@ -188,6 +201,15 @@ export default function ProfileForm({ user, isEditMode = false, onComplete }) {
           )}
           
           <form onSubmit={handleSubmit} className="space-y-6">
+            <style>{`
+              ${isReadOnly ? `
+                input, textarea, select {
+                  pointer-events: none !important;
+                  background-color: #f3f4f6 !important;
+                  cursor: not-allowed !important;
+                }
+              ` : ''}
+            `}</style>
             
             {/* Step 1: Personal Info */}
             {step === 1 && (
@@ -204,7 +226,8 @@ export default function ProfileForm({ user, isEditMode = false, onComplete }) {
                     name="id"
                     value={form.id}
                     onChange={handleChange}
-                    className="w-full border-2 border-gray-200 rounded-2xl px-4 py-3 focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
+                    disabled={isReadOnly}
+                    className={`w-full border-2 border-gray-200 rounded-2xl px-4 py-3 focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all ${isReadOnly ? 'bg-gray-100 cursor-not-allowed' : ''}`}
                     placeholder="Enter your unique ID"
                     required
                   />
@@ -476,45 +499,47 @@ export default function ProfileForm({ user, isEditMode = false, onComplete }) {
             )}
 
             {/* Navigation Buttons */}
-            <div className="flex justify-between items-center pt-6 border-t border-gray-200">
-              {step > 1 && (
-                <button
-                  type="button"
-                  onClick={prevStep}
-                  className="px-6 py-3 bg-gray-200 text-gray-700 rounded-2xl font-semibold hover:bg-gray-300 transition-all transform hover:scale-105"
-                >
-                  ← Previous
-                </button>
-              )}
-              
-              {step < 3 ? (
-                <button
-                  type="button"
-                  onClick={nextStep}
-                  className="animated-button ml-auto px-8 py-3 bg-gradient-to-r from-purple-500 to-pink-500 text-white rounded-2xl font-semibold hover:shadow-2xl transition-all transform hover:scale-105"
-                >
-                  Next →
-                </button>
-              ) : (
-                <button
-                  type="submit"
-                  disabled={loading}
-                  className="animated-button ml-auto px-8 py-3 bg-gradient-to-r from-green-500 to-blue-500 text-white rounded-2xl font-bold hover:shadow-2xl disabled:opacity-50 disabled:cursor-not-allowed transition-all transform hover:scale-105"
-                >
-                  {loading ? (
-                    <span className="flex items-center">
-                      <span className="spinner w-5 h-5 border-3 border-white border-t-transparent rounded-full mr-3"></span>
-                      Saving...
-                    </span>
-                  ) : (
-                    <span className="flex items-center">
-                      <span className="mr-2">✨</span>
-                      Complete Profile
-                    </span>
-                  )}
-                </button>
-              )}
-            </div>
+            {!isViewMode && (
+              <div className="flex justify-between items-center pt-6 border-t border-gray-200">
+                {step > 1 && (
+                  <button
+                    type="button"
+                    onClick={prevStep}
+                    className="px-6 py-3 bg-gray-200 text-gray-700 rounded-2xl font-semibold hover:bg-gray-300 transition-all transform hover:scale-105"
+                  >
+                    ← Previous
+                  </button>
+                )}
+                
+                {step < 3 ? (
+                  <button
+                    type="button"
+                    onClick={nextStep}
+                    className="animated-button ml-auto px-8 py-3 bg-gradient-to-r from-purple-500 to-pink-500 text-white rounded-2xl font-semibold hover:shadow-2xl transition-all transform hover:scale-105"
+                  >
+                    Next →
+                  </button>
+                ) : (
+                  <button
+                    type="submit"
+                    disabled={loading}
+                    className="animated-button ml-auto px-8 py-3 bg-gradient-to-r from-green-500 to-blue-500 text-white rounded-2xl font-bold hover:shadow-2xl disabled:opacity-50 disabled:cursor-not-allowed transition-all transform hover:scale-105"
+                  >
+                    {loading ? (
+                      <span className="flex items-center">
+                        <span className="spinner w-5 h-5 border-3 border-white border-t-transparent rounded-full mr-3"></span>
+                        Saving...
+                      </span>
+                    ) : (
+                      <span className="flex items-center">
+                        <span className="mr-2">✨</span>
+                        {isEditMode ? "Update Profile" : "Complete Profile"}
+                      </span>
+                    )}
+                  </button>
+                )}
+              </div>
+            )}
           </form>
         </div>
       </div>

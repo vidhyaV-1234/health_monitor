@@ -85,6 +85,20 @@ function App() {
             } 
           />
           <Route 
+            path="/profile/view" 
+            element={
+              user ? (
+                <ProfileForm 
+                  user={user}
+                  isViewMode={true}
+                  onComplete={() => setUser({...user, hasProfile: true})} 
+                />
+              ) : (
+                <Navigate to="/login" />
+              )
+            } 
+          />
+          <Route 
             path="/profile/edit" 
             element={
               user ? (

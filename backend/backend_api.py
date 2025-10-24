@@ -449,6 +449,35 @@ async def health_check():
 # ============================================
 # PROFILE ENDPOINTS
 
+@app.get("/api/profile/{user_id}")
+async def get_profile(
+    user_id: str,
+    user_id_obj: dict = Depends(verify_token)
+):
+    """Get user profile/habit data from Supabase"""
+    try:
+        logger.info(f"Fetching profile for user {user_id}")
+        
+        # Fetch habit data from Supabase
+        response = supabase.table("habit").select("*").eq("id", user_id).execute()
+        
+        if not response.data:
+            raise HTTPException(status_code=404, detail="Profile not found")
+        
+        profile_data = response.data[0]
+        logger.info(f"Profile fetched successfully for user {user_id}")
+        
+        return JSONResponse({
+            "status": "success",
+            "data": profile_data
+        })
+        
+    except HTTPException as he:
+        raise he
+    except Exception as e:
+        logger.error(f"Error fetching profile: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Profile fetch error: {str(e)}")
+
 @app.post("/api/profile")
 async def save_profile(
     id: str = Form(...),
