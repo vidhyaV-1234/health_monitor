@@ -59,45 +59,61 @@ export default function MoodEntry({ user }) {
     setResult(null);
 
     try {
-      // 1) Upload media to Supabase Storage from the frontend
-      const bucket = import.meta.env.VITE_SUPABASE_MEDIA_BUCKET || "mood-media";
-      const ts = new Date().toISOString().replace(/[-:.TZ]/g, "").slice(0, 14);
-      const folder = `${form.id}`;
+      let response;
+      if (supaConfigured) {
+        // 1) Upload media to Supabase Storage from the frontend
+        const bucket = import.meta.env.VITE_SUPABASE_MEDIA_BUCKET || "mood-media";
+        const ts = new Date().toISOString().replace(/[-:.TZ]/g, "").slice(0, 14);
+        const folder = `${form.id}`;
 
-      if (!supaConfigured) throw new Error("Supabase is not configured on the frontend");
+        if (form.mood_audio) {
+          const audioPath = `${folder}/${ts}_${form.mood_audio.name}`;
+          await uploadToBucket({
+            bucket,
+            path: audioPath,
+            file: form.mood_audio,
+            contentType: form.mood_audio.type || "application/octet-stream",
+          });
+        }
 
-      if (form.mood_audio) {
-        const audioPath = `${folder}/${ts}_${form.mood_audio.name}`;
-        await uploadToBucket({
-          bucket,
-          path: audioPath,
-          file: form.mood_audio,
-          contentType: form.mood_audio.type || "application/octet-stream",
+        if (form.mood_image) {
+          const imagePath = `${folder}/${ts}_${form.mood_image.name}`;
+          await uploadToBucket({
+            bucket,
+            path: imagePath,
+            file: form.mood_image,
+            contentType: form.mood_image.type || "application/octet-stream",
+          });
+        }
+
+        // Send only id and text; backend will fetch media from storage
+        const formData = new FormData();
+        formData.append("id", form.id);
+        formData.append("mood_text", form.mood_text);
+
+        response = await axios.post(`${API_BASE_URL}/api/mood`, formData, {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "multipart/form-data",
+          },
+        });
+      } else {
+        // Fallback: send files directly to backend (legacy flow)
+        const formData = new FormData();
+        formData.append("id", form.id);
+        formData.append("mood_text", form.mood_text);
+        if (form.mood_audio) formData.append("mood_audio", form.mood_audio);
+        if (form.mood_image) formData.append("mood_image", form.mood_image);
+
+        response = await axios.post(`${API_BASE_URL}/api/mood`, formData, {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "multipart/form-data",
+          },
         });
       }
 
-      if (form.mood_image) {
-        const imagePath = `${folder}/${ts}_${form.mood_image.name}`;
-        await uploadToBucket({
-          bucket,
-          path: imagePath,
-          file: form.mood_image,
-          contentType: form.mood_image.type || "application/octet-stream",
-        });
-      }
-
-      // Optional: Let backend store text for consistency; do not upload text from FE
-      const formData = new FormData();
-      formData.append("id", form.id);
-      formData.append("mood_text", form.mood_text);
-
-      // 2) Trigger backend to run preprocessor by user id
-      const response = await axios.post(`${API_BASE_URL}/api/mood`, formData, {
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "multipart/form-data",
-        },
-      });
+      // 2) Continue handling response
 
       const newResult = {
         ...response.data.data,
