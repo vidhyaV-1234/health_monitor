@@ -66,6 +66,21 @@ export default function MoodEntry({ user }) {
     setError("");
     setResult(null);
 
+    // Validate required fields
+    console.log("🔍 Validating form data:", { id: form.id, mood_text: form.mood_text, user: user });
+    
+    if (!form.id) {
+      setError("User ID is missing. Please refresh the page and try again.");
+      setLoading(false);
+      return;
+    }
+    
+    if (!form.mood_text || form.mood_text.trim() === "") {
+      setError("Please enter your mood text.");
+      setLoading(false);
+      return;
+    }
+
     try {
       let response;
       if (supaConfigured) {

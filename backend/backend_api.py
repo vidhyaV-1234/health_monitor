@@ -517,14 +517,13 @@ async def submit_mood(
         content_type = request.headers.get("content-type", "")
         logger.info(f"Content-Type: {content_type}")
         
-        # Read raw body for debugging
-        body_bytes = await request.body()
-        logger.info(f"Raw body length: {len(body_bytes)}")
-        logger.info(f"Raw body preview: {body_bytes[:200]}")
-        
         # Handle JSON (URLs from frontend Supabase upload)
         if "application/json" in content_type:
             import json as json_lib
+            body_bytes = await request.body()
+            logger.info(f"Raw body length: {len(body_bytes)}")
+            logger.info(f"Raw body preview: {body_bytes[:200]}")
+            
             data = json_lib.loads(body_bytes)
             logger.info(f"Parsed JSON data: {data}")
             
