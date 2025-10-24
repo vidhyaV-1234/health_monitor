@@ -42,9 +42,15 @@ export default function ProfileForm({ user, isEditMode = false, isViewMode = fal
   const fetchProfileData = async (userId) => {
     try {
       setFetchingProfile(true);
+      console.log("Fetching profile for user:", userId);
+      console.log("API URL:", `${API_BASE_URL}/api/profile/${userId}`);
+      console.log("Token:", token ? "Present" : "Missing");
+      
       const response = await axios.get(`${API_BASE_URL}/api/profile/${userId}`, {
         headers: { Authorization: `Bearer ${token}` }
       });
+      
+      console.log("Profile response:", response.data);
       
       if (response.data && response.data.data) {
         // Update form with existing data
@@ -52,9 +58,14 @@ export default function ProfileForm({ user, isEditMode = false, isViewMode = fal
           ...prevForm,
           ...response.data.data
         }));
+        console.log("Profile loaded successfully");
+      } else {
+        console.warn("No profile data in response:", response.data);
       }
     } catch (err) {
       console.error("Error fetching profile:", err);
+      console.error("Error response:", err.response?.data);
+      console.error("Error status:", err.response?.status);
       setError("Could not load profile data: " + (err.response?.data?.detail || err.message));
     } finally {
       setFetchingProfile(false);
@@ -154,10 +165,10 @@ export default function ProfileForm({ user, isEditMode = false, isViewMode = fal
             </button>
           )}
           <div className="text-6xl mb-4 animate-bounce">
-            {isViewMode ? "👤" : isEditMode ? "⚙️" : "📝"}
+            {isViewMode ? "👤" : isEditMode ? "👤" : "📝"}
           </div>
           <h1 className="text-3xl font-bold gradient-text mb-2">
-            {isViewMode ? "Your Profile" : isEditMode ? "Edit Your Profile" : "Complete Your Profile"}
+            {isViewMode ? "Your Profile" : isEditMode ? "Your Profile" : "Complete Your Profile"}
           </h1>
           <p className="text-gray-600">
             {isViewMode ? "View your wellness preferences" : isEditMode ? "Update your wellness preferences" : "Help us personalize your wellness journey"}
