@@ -17,18 +17,17 @@ numpy>=1.24.0
 requests>=2.31.0
 boto3>=1.28.0
 
-# ML Models for Audio & Image Processing  
-# Note: These packages are heavy (>2GB) and may exceed Render free tier limits
-# Uncomment only if deploying to paid Render plan or AWS/GCP
-# openai-whisper
-# deepface
-# tensorflow>=2.13.0
-# librosa>=0.10.0
-# soundfile>=0.12.0
-# opencv-python-headless>=4.8.0
-# Pillow>=10.0.0
-
-# For now, text-only mode uses AWS Bedrock (no heavy ML dependencies)
+# ML Models for Audio & Image Processing
+# Note: These packages are heavy (~2GB total)
+# Requires Render Standard plan ($7/month) with 2GB RAM
+openai-whisper
+deepface
+tensorflow>=2.13.0,<2.16.0
+librosa>=0.10.0
+soundfile>=0.12.0
+opencv-python-headless>=4.8.0
+Pillow>=10.0.0
+ffmpeg-python>=0.2.0
 
 # Prevent Rust build issues on Render
 --only-binary :all:
