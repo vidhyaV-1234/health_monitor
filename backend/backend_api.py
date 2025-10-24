@@ -509,12 +509,12 @@ async def save_profile(
 
 @app.post("/api/mood")
 async def submit_mood(
-    request: Request,
-    user_id_obj: dict = Depends(verify_token)
+    request: Request
 ):
     """Submit mood entry: accepts JSON with URLs or form-data with files"""
     try:
         content_type = request.headers.get("content-type", "")
+        logger.info(f"Received mood submission with content-type: {content_type}")
         
         # Handle JSON (URLs from frontend Supabase upload)
         if "application/json" in content_type:
