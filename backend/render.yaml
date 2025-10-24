@@ -2,13 +2,12 @@ services:
   - type: web
     name: health-monitor-backend
     env: python
-    plan: standard  # Required for ML models (2GB RAM)
+    plan: free  # Free tier is enough for lightweight models
     buildCommand: |
-      apt-get update && apt-get install -y ffmpeg libsndfile1
       pip install --upgrade pip
       pip install -r requirements.txt
     startCommand: python backend_api.py
     envVars:
       - key: PYTHON_VERSION
-        value: 3.10.0
+        value: 3.10.14
 

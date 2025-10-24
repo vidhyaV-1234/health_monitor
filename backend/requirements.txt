@@ -18,13 +18,13 @@ requests>=2.31.0
 boto3>=1.28.0
 
 # Lightweight open-source models for audio/image processing
-# Small models that work on Render free tier (~50MB total)
+# Small models that work on Render free tier
 SpeechRecognition>=3.10.0  # Audio transcription (uses Google API - free)
 pydub>=0.25.1  # Audio file handling
 fer>=22.5.1  # Facial Emotion Recognition (~30MB, open-source)
 opencv-python-headless>=4.8.0  # Required by FER
 Pillow>=10.0.0  # Image handling
-tensorflow>=2.13.0,<2.16.0  # Required by FER (will use CPU only)
+tensorflow>=2.20.0  # Use latest version compatible with Python 3.13
 
 # Prevent Rust build issues on Render
 --only-binary :all:
