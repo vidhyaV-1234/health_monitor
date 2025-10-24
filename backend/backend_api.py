@@ -513,39 +513,62 @@ async def submit_mood(
     mood_audio: UploadFile = File(None),
     mood_image: UploadFile = File(None)
 ):
-    """Submit mood entry with text, audio, and image - full ML processing"""
+    """Submit mood entry: store raw inputs in Supabase Storage, then trigger preprocessing by user id"""
     try:
         # Use the id from the form parameter directly
         logger.info(f"Processing mood entry for user: {id}")
         
-        # Save uploaded files (if provided)
-        audio_path = None
-        image_path = None
+        # 1) Upload raw inputs to Supabase Storage under bucket/<user_id>/
+        ts = datetime.now().strftime('%Y%m%d_%H%M%S')
+        folder = f"{id}"
+        audio_key = None
+        image_key = None
+        text_key = f"{folder}/{ts}_text.txt"
         
-        if mood_audio and mood_audio.filename:
-            audio_path = TEMP_DIR / f"audio_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{mood_audio.filename}"
-            with open(audio_path, "wb") as f:
-                f.write(await mood_audio.read())
-            logger.info(f"Audio file saved: {audio_path}")
-        
-        if mood_image and mood_image.filename:
-            image_path = TEMP_DIR / f"image_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{mood_image.filename}"
-            with open(image_path, "wb") as f:
-                f.write(await mood_image.read())
-            logger.info(f"Image file saved: {image_path}")
-        
-        # Try to use ML models if available
-        if preprocessor and analyzer:
-            logger.info("Using ML models for mood analysis")
+        try:
+            # Ensure storage bucket exists (no-op if present)
+            storage = supabase.storage
+            bucket_name = os.getenv("SUPABASE_MEDIA_BUCKET", "mood-media")
             try:
-                # Preprocess with ML models
-                # Note: analyze=True means preprocessor will automatically:
-                # 1. Call analyzer.analyze(id, preprocessed_data)
-                # 2. Call process_user(id, preprocessed_data) to update report
-                preprocessed_data = preprocessor.preprocess(
-                    audio_path=str(audio_path) if audio_path else None,
-                    image_path=str(image_path) if image_path else None,
-                    text_input=mood_text,
+                storage.create_bucket(bucket_name)
+            except Exception:
+                pass
+            
+            # Upload audio
+            if mood_audio and mood_audio.filename:
+                audio_bytes = await mood_audio.read()
+                audio_key = f"{folder}/{ts}_{mood_audio.filename}"
+                storage.from_(bucket_name).upload(path=audio_key, file=audio_bytes, file_options={
+                    "contentType": mood_audio.content_type or "application/octet-stream",
+                    "upsert": True
+                })
+                logger.info(f"✓ Uploaded audio to storage: {audio_key}")
+            
+            # Upload image
+            if mood_image and mood_image.filename:
+                image_bytes = await mood_image.read()
+                image_key = f"{folder}/{ts}_{mood_image.filename}"
+                storage.from_(bucket_name).upload(path=image_key, file=image_bytes, file_options={
+                    "contentType": mood_image.content_type or "application/octet-stream",
+                    "upsert": True
+                })
+                logger.info(f"✓ Uploaded image to storage: {image_key}")
+            
+            # Upload text
+            if mood_text:
+                storage.from_(bucket_name).upload(path=text_key, file=mood_text.encode("utf-8"), file_options={
+                    "contentType": "text/plain",
+                    "upsert": True
+                })
+                logger.info(f"✓ Uploaded text to storage: {text_key}")
+        except Exception as e:
+            logger.warning(f"Storage upload failed (will continue with local processing): {str(e)}")
+        
+        # 2) Trigger preprocessing from Supabase (preferred path)
+        if preprocessor and analyzer:
+            logger.info("Using ML models - fetching latest media from Supabase storage")
+            try:
+                preprocessed_data = preprocessor.preprocess_from_supabase(
                     user_id=id,
                     analyze=True
                 )
