@@ -1,11 +1,13 @@
 import { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import axios from "axios";
 import { API_BASE_URL } from "../config";
 import MasonryGrid from "../components/MasonryGrid";
 import NotificationBanner from "../components/NotificationBanner";
-import { supabase, uploadToBucket } from "../utils/supabase";
+import { isConfigured as supaConfigured, uploadFileAndGetUrl } from "../utils/supabase";
 
 export default function MoodEntry({ user }) {
+  const navigate = useNavigate();
   const [form, setForm] = useState({
     id: "",
     mood_text: "",
@@ -21,6 +23,14 @@ export default function MoodEntry({ user }) {
   const [showNotifications, setShowNotifications] = useState(false);
 
   const token = localStorage.getItem("token");
+
+  // Set user ID when component mounts
+  useEffect(() => {
+    if (user && user.id) {
+      setForm(prevForm => ({ ...prevForm, id: user.id }));
+      console.log("✓ User ID set:", user.id);
+    }
+  }, [user]);
 
   const loadNotificationHistory = async (userId) => {
     if (!userId) return;
@@ -58,46 +68,117 @@ export default function MoodEntry({ user }) {
     setError("");
     setResult(null);
 
+    // Validate required fields
+    console.log("🔍 Validating form data:", { id: form.id, mood_text: form.mood_text, user: user });
+    
+    if (!form.id) {
+      setError("User ID is missing. Please refresh the page and try again.");
+      setLoading(false);
+      return;
+    }
+    
+    if (!form.mood_text || form.mood_text.trim() === "") {
+      setError("Please enter your mood text.");
+      setLoading(false);
+      return;
+    }
+
     try {
-      // 1) Upload media to Supabase Storage from the frontend
-      const bucket = import.meta.env.VITE_SUPABASE_MEDIA_BUCKET || "mood-media";
-      const ts = new Date().toISOString().replace(/[-:.TZ]/g, "").slice(0, 14);
-      const folder = `${form.id}`;
+      let response;
+      if (supaConfigured) {
+        // 1) Upload media to Supabase Storage and get public URLs
+        const bucket = import.meta.env.VITE_SUPABASE_MEDIA_BUCKET || "mood_media";
+        const folder = form.id;
 
-      if (!supabase) throw new Error("Supabase client not initialized");
+        console.log("📤 Uploading to Supabase:", { bucket, folder, supaConfigured });
+        console.log("ENV CHECK:", {
+          VITE_SUPABASE_URL: import.meta.env.VITE_SUPABASE_URL,
+          VITE_SUPABASE_ANON_KEY: import.meta.env.VITE_SUPABASE_ANON_KEY ? 'SET' : 'MISSING',
+          VITE_SUPABASE_MEDIA_BUCKET: import.meta.env.VITE_SUPABASE_MEDIA_BUCKET,
+          VITE_API_URL: import.meta.env.VITE_API_URL
+        });
 
-      if (form.mood_audio) {
-        const audioPath = `${folder}/${ts}_${form.mood_audio.name}`;
-        await uploadToBucket({
-          bucket,
-          path: audioPath,
-          file: form.mood_audio,
-          contentType: form.mood_audio.type || "application/octet-stream",
+        let audioUrl = null;
+        let imageUrl = null;
+
+        if (form.mood_audio) {
+          console.log("🎤 Uploading audio...");
+          try {
+            const result = await uploadFileAndGetUrl({
+              bucket,
+              file: form.mood_audio,
+              folder,
+            });
+            audioUrl = result.publicUrl;
+            console.log("✓ Audio uploaded:", audioUrl);
+          } catch (uploadErr) {
+            console.error("Audio upload failed:", uploadErr);
+            throw new Error(`Audio upload failed: ${uploadErr.message}`);
+          }
+        }
+
+        if (form.mood_image) {
+          console.log("📷 Uploading image...");
+          try {
+            const result = await uploadFileAndGetUrl({
+              bucket,
+              file: form.mood_image,
+              folder,
+            });
+            imageUrl = result.publicUrl;
+            console.log("✓ Image uploaded:", imageUrl);
+          } catch (uploadErr) {
+            console.error("Image upload failed:", uploadErr);
+            throw new Error(`Image upload failed: ${uploadErr.message}`);
+          }
+        }
+
+        // Send id, text, and URLs to backend
+        const payload = {
+          id: form.id,
+          mood_text: form.mood_text,
+          audio_url: audioUrl,
+          image_url: imageUrl,
+        };
+
+        console.log("📤 Sending payload to backend:", payload);
+        console.log("🔍 Payload details:", {
+          id: payload.id,
+          id_type: typeof payload.id,
+          mood_text: payload.mood_text,
+          mood_text_type: typeof payload.mood_text,
+          audio_url: payload.audio_url,
+          image_url: payload.image_url
+        });
+        console.log("🌐 API URL:", API_BASE_URL);
+        console.log("🔑 Token present:", !!token);
+        console.log("📋 Stringified payload:", JSON.stringify(payload));
+
+        response = await axios.post(`${API_BASE_URL}/api/mood`, payload, {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+        });
+
+        console.log("✅ Response received:", response.status);
+      } else {
+        // Fallback: send files directly to backend (legacy flow)
+        const formData = new FormData();
+        formData.append("id", form.id);
+        formData.append("mood_text", form.mood_text);
+        if (form.mood_audio) formData.append("mood_audio", form.mood_audio);
+        if (form.mood_image) formData.append("mood_image", form.mood_image);
+
+        response = await axios.post(`${API_BASE_URL}/api/mood`, formData, {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "multipart/form-data",
+          },
         });
       }
 
-      if (form.mood_image) {
-        const imagePath = `${folder}/${ts}_${form.mood_image.name}`;
-        await uploadToBucket({
-          bucket,
-          path: imagePath,
-          file: form.mood_image,
-          contentType: form.mood_image.type || "application/octet-stream",
-        });
-      }
-
-      // Optional: Let backend store text for consistency; do not upload text from FE
-      const formData = new FormData();
-      formData.append("id", form.id);
-      formData.append("mood_text", form.mood_text);
-
-      // 2) Trigger backend to run preprocessor by user id
-      const response = await axios.post(`${API_BASE_URL}/api/mood`, formData, {
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "multipart/form-data",
-        },
-      });
+      // 2) Continue handling response
 
       const newResult = {
         ...response.data.data,
@@ -120,7 +201,31 @@ export default function MoodEntry({ user }) {
       console.log("Mood analysis result:", response.data.data);
     } catch (err) {
       console.error("Error:", err);
-      setError("Error processing mood: " + (err.response?.data?.detail || err.message));
+      console.error("Error response:", err.response);
+      console.error("Error response data:", err.response?.data);
+      console.error("Error response status:", err.response?.status);
+      
+      let errorMsg = "Error processing mood";
+      
+      // Handle 422 validation errors from FastAPI
+      if (err.response?.status === 422 && err.response?.data?.detail) {
+        if (Array.isArray(err.response.data.detail)) {
+          // FastAPI validation error format
+          const errors = err.response.data.detail.map(e => {
+            const loc = e.loc ? e.loc.join('.') : 'unknown';
+            return `${loc}: ${e.msg}`;
+          });
+          errorMsg += ": " + errors.join(", ");
+        } else if (typeof err.response.data.detail === 'string') {
+          errorMsg += ": " + err.response.data.detail;
+        } else {
+          errorMsg += ": " + JSON.stringify(err.response.data.detail);
+        }
+      } else if (err.message) {
+        errorMsg += ": " + err.message;
+      }
+      
+      setError(errorMsg);
     } finally {
       setLoading(false);
     }
@@ -144,11 +249,33 @@ export default function MoodEntry({ user }) {
       <div className="relative z-10 bg-white bg-opacity-80 backdrop-blur-md shadow-sm">
         <div className="max-w-7xl mx-auto px-4 py-4 flex justify-between items-center">
           <div className="flex items-center space-x-3">
-            <span className="text-3xl">💭</span>
-            <h1 className="text-2xl font-bold gradient-text">MoodFlow</h1>
+            <img 
+              src="/logo.jpeg" 
+              alt="Mood Flow Logo" 
+              className="w-12 h-12 rounded-full shadow-md object-cover"
+            />
+            <h1 className="text-2xl font-bold gradient-text">mood flow</h1>
           </div>
           <div className="flex items-center space-x-4">
-            <span className="text-gray-600">Welcome, {user.username || 'User'}</span>
+            {user?.hasProfile ? (
+              <button
+                onClick={() => navigate("/profile/view")}
+                className="px-4 py-2 bg-purple-500 text-white rounded-full hover:bg-purple-600 transition-all hover:scale-105 flex items-center space-x-2"
+                title="View Profile"
+              >
+                <span>👤</span>
+                <span>Profile</span>
+              </button>
+            ) : (
+              <button
+                onClick={() => navigate("/profile")}
+                className="px-4 py-2 bg-green-500 text-white rounded-full hover:bg-green-600 transition-all hover:scale-105 flex items-center space-x-2"
+                title="Complete Profile"
+              >
+                <span>📝</span>
+                <span>Complete Profile</span>
+              </button>
+            )}
             <button
               onClick={handleLogout}
               className="px-4 py-2 bg-red-500 text-white rounded-full hover:bg-red-600 transition-all hover:scale-105"

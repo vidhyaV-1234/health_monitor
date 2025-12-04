@@ -17,5 +17,14 @@ numpy>=1.24.0
 requests>=2.31.0
 boto3>=1.28.0
 
+# Ultra-lightweight models for audio/image processing
+# Optimized for Render free tier (512MB RAM limit)
+SpeechRecognition>=3.10.0  # Audio transcription (uses Google API - free, 0MB)
+pydub>=0.25.1  # Audio file handling
+deepface>=0.0.79  # Emotion detection (~5MB with opencv backend)
+opencv-python-headless>=4.8.0  # Required by DeepFace (lightweight)
+Pillow>=10.0.0  # Image handling
+tf-keras>=2.16.0  # Lightweight Keras (required by DeepFace)
+
 # Prevent Rust build issues on Render
 --only-binary :all:

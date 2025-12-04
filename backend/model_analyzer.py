@@ -19,10 +19,36 @@ class ModelAnalyzer:
         print("INITIALIZING MODEL ANALYZER")
         print("="*70)
         
-        # Initialize Bedrock Runtime client
+        # Initialize Bedrock Runtime client with explicit credentials
         print(f"\n🔗 Initializing AWS Bedrock client...")
         try:
-            self.bedrock_client = boto3.client("bedrock-runtime", region_name="us-east-1")
+            # Get credentials from environment
+            aws_access_key = os.getenv("AWS_ACCESS_KEY_ID")
+            aws_secret_key = os.getenv("AWS_SECRET_ACCESS_KEY")
+            aws_session_token = os.getenv("AWS_SESSION_TOKEN")  # For temporary credentials
+            aws_region = os.getenv("AWS_REGION", "us-east-1")
+            
+            if not aws_access_key or not aws_secret_key:
+                raise ValueError("AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY must be set in environment variables")
+            
+            print(f"  → Region: {aws_region}")
+            print(f"  → Access Key: {aws_access_key[:8]}... (masked)")
+            if aws_session_token:
+                print(f"  → Session Token: {aws_session_token[:20]}... (temporary credentials)")
+            
+            # Build client kwargs
+            client_kwargs = {
+                "service_name": "bedrock-runtime",
+                "region_name": aws_region,
+                "aws_access_key_id": aws_access_key,
+                "aws_secret_access_key": aws_secret_key
+            }
+            
+            # Add session token if present (for temporary credentials)
+            if aws_session_token:
+                client_kwargs["aws_session_token"] = aws_session_token
+            
+            self.bedrock_client = boto3.client(**client_kwargs)
             self.model_id = "us.anthropic.claude-3-5-sonnet-20241022-v2:0"
             print(f"✓ AWS Bedrock client initialized successfully")
             print(f"  → API: AWS Bedrock")

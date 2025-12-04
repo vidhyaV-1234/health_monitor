@@ -23,9 +23,10 @@ function App() {
     }
 
     try {
-      // Verify token and get user info
+      // Verify token and get user info (quick timeout to avoid hanging during local dev)
       const response = await axios.get(`${API_BASE_URL}/api/auth/me`, {
-        headers: { Authorization: `Bearer ${token}` }
+        headers: { Authorization: `Bearer ${token}` },
+        timeout: 7000,
       });
       setUser(response.data);
     } catch (error) {
@@ -61,13 +62,51 @@ function App() {
               )
             } 
           />
-          <Route path="/login" element={<Login onLogin={setUser} />} />
-          <Route path="/signup" element={<Signup />} />
+          <Route 
+            path="/login" 
+            element={
+              user ? <Navigate to="/mood" replace /> : <Login onLogin={setUser} />
+            } 
+          />
+          <Route 
+            path="/signup" 
+            element={
+              user ? <Navigate to="/mood" replace /> : <Signup />
+            } 
+          />
           <Route 
             path="/profile" 
             element={
               user ? (
                 <ProfileForm onComplete={() => setUser({...user, hasProfile: true})} />
+              ) : (
+                <Navigate to="/login" />
+              )
+            } 
+          />
+          <Route 
+            path="/profile/view" 
+            element={
+              user ? (
+                <ProfileForm 
+                  user={user}
+                  isViewMode={true}
+                  onComplete={() => setUser({...user, hasProfile: true})} 
+                />
+              ) : (
+                <Navigate to="/login" />
+              )
+            } 
+          />
+          <Route 
+            path="/profile/edit" 
+            element={
+              user ? (
+                <ProfileForm 
+                  user={user}
+                  isEditMode={true} 
+                  onComplete={() => setUser({...user, hasProfile: true})} 
+                />
               ) : (
                 <Navigate to="/login" />
               )

@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: health-monitor-backend
+    env: python
+    plan: free  # Free tier is enough for lightweight models
+    buildCommand: |
+      pip install --upgrade pip
+      pip install -r requirements.txt
+    startCommand: python backend_api.py
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.10.14
+

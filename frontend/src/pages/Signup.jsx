@@ -3,9 +3,11 @@ import { register } from "../utils/api";
 import { Link, useNavigate } from "react-router-dom";
 
 export default function Signup() {
-  const [form, setForm] = useState({ id: "", name: "", email: "", password: "" });
+  const [form, setForm] = useState({ id: "", name: "", email: "", password: "", confirmPassword: "" });
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const navigate = useNavigate();
 
   const handleChange = (e) =>
@@ -16,8 +18,24 @@ export default function Signup() {
     setLoading(true);
     setError("");
     
+    // Validate password length
+    if (form.password.length < 6) {
+      setError("Password must be at least 6 characters long");
+      setLoading(false);
+      return;
+    }
+    
+    // Validate password match
+    if (form.password !== form.confirmPassword) {
+      setError("Passwords do not match");
+      setLoading(false);
+      return;
+    }
+    
     try {
-      await register(form);
+      // Remove confirmPassword before sending to API
+      const { confirmPassword, ...registerData } = form;
+      await register(registerData);
       navigate("/login");
     } catch (err) {
       const errorMessage = err.response?.data?.detail || err.response?.data?.message || "Registration failed";
@@ -39,8 +57,12 @@ export default function Signup() {
       {/* Signup Card */}
       <div className="pinterest-card relative z-10 w-full max-w-md mx-4 p-8 bg-white shadow-2xl">
         <div className="text-center mb-8">
-          <div className="text-6xl mb-4 animate-bounce">🌟</div>
-          <h1 className="text-3xl font-bold gradient-text mb-2">MoodFlow</h1>
+          <img 
+            src="/logo.jpeg" 
+            alt="Mood Flow Logo" 
+            className="w-24 h-24 mx-auto mb-4 rounded-full shadow-lg object-cover"
+          />
+          <h1 className="text-3xl font-bold gradient-text mb-2">mood flow</h1>
           <h2 className="text-xl font-semibold text-gray-700">Create Account</h2>
           <p className="text-gray-500 text-sm mt-2">Start your emotional wellness journey today</p>
         </div>
@@ -109,14 +131,47 @@ export default function Signup() {
             <div className="relative">
               <span className="absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-400">🔒</span>
               <input
-                type="password"
+                type={showPassword ? "text" : "password"}
                 name="password"
-                placeholder="Create a strong password"
+                placeholder="Create password (min 6 characters)"
                 value={form.password}
                 onChange={handleChange}
                 required
-                className="w-full border-2 border-gray-200 rounded-2xl pl-12 pr-4 py-3 focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
+                minLength={6}
+                className="w-full border-2 border-gray-200 rounded-2xl pl-12 pr-12 py-3 focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
               />
+              <button
+                type="button"
+                onClick={() => setShowPassword(!showPassword)}
+                className="absolute right-4 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600 focus:outline-none"
+              >
+                {showPassword ? "👁️" : "👁️‍🗨️"}
+              </button>
+            </div>
+            <p className="text-xs text-gray-500 mt-1 ml-1">Must be at least 6 characters</p>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Confirm Password</label>
+            <div className="relative">
+              <span className="absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-400">🔒</span>
+              <input
+                type={showConfirmPassword ? "text" : "password"}
+                name="confirmPassword"
+                placeholder="Re-enter your password"
+                value={form.confirmPassword}
+                onChange={handleChange}
+                required
+                minLength={6}
+                className="w-full border-2 border-gray-200 rounded-2xl pl-12 pr-12 py-3 focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
+              />
+              <button
+                type="button"
+                onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                className="absolute right-4 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600 focus:outline-none"
+              >
+                {showConfirmPassword ? "👁️" : "👁️‍🗨️"}
+              </button>
             </div>
           </div>
 

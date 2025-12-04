@@ -7,6 +7,7 @@ export default function Login({ onLogin }) {
   const [form, setForm] = useState({ email: "", password: "" });
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
   const navigate = useNavigate();
 
   const handleChange = (e) =>
@@ -59,8 +60,12 @@ export default function Login({ onLogin }) {
       {/* Login Card */}
       <div className="pinterest-card relative z-10 w-full max-w-md mx-4 p-8 bg-white shadow-2xl">
         <div className="text-center mb-8">
-          <div className="text-6xl mb-4 animate-bounce">💭</div>
-          <h1 className="text-3xl font-bold gradient-text mb-2">MoodFlow</h1>
+          <img 
+            src="/logo.jpeg" 
+            alt="Mood Flow Logo" 
+            className="w-24 h-24 mx-auto mb-4 rounded-full shadow-lg object-cover"
+          />
+          <h1 className="text-3xl font-bold gradient-text mb-2">mood flow</h1>
           <h2 className="text-xl font-semibold text-gray-700">Welcome Back</h2>
           <p className="text-gray-500 text-sm mt-2">Sign in to continue your emotional journey</p>
         </div>
@@ -96,14 +101,22 @@ export default function Login({ onLogin }) {
             <div className="relative">
               <span className="absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-400">🔒</span>
               <input
-                type="password"
+                type={showPassword ? "text" : "password"}
                 name="password"
-                placeholder="Enter your password"
+                placeholder="Enter your password (min 6 characters)"
                 value={form.password}
                 onChange={handleChange}
-                className="w-full border-2 border-gray-200 rounded-2xl pl-12 pr-4 py-3 focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
+                className="w-full border-2 border-gray-200 rounded-2xl pl-12 pr-12 py-3 focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
                 required
+                minLength={6}
               />
+              <button
+                type="button"
+                onClick={() => setShowPassword(!showPassword)}
+                className="absolute right-4 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600 focus:outline-none"
+              >
+                {showPassword ? "👁️" : "👁️‍🗨️"}
+              </button>
             </div>
           </div>
 

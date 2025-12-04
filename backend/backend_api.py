@@ -3,7 +3,7 @@ FastAPI Backend for Wellness Activity Recommender
 Serves HTML/JS frontend and provides API endpoints for AI analysis via AWS Bedrock Claude
 """
 
-from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Depends, Header
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Depends, Header, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -16,6 +16,8 @@ import logging
 from typing import Optional
 import jwt
 from dotenv import load_dotenv
+import requests
+import tempfile
 
 
 # Load environment variables from .env file
@@ -106,11 +108,11 @@ def initialize_models():
     try:
         logger.info("Initializing models...")
         
-        # Initialize preprocessor with error handling
+        # Initialize ultra-lightweight preprocessor
         try:
-            from preprocessor import MultimodalPreprocessor
-            preprocessor = MultimodalPreprocessor(whisper_model="base")
-            logger.info("✓ Preprocessor initialized (Whisper)")
+            from preprocessor_lite import MultimodalPreprocessor
+            preprocessor = MultimodalPreprocessor()
+            logger.info("✓ Ultra-Lightweight Preprocessor initialized (Google Speech + DeepFace <100MB)")
         except Exception as e:
             logger.warning(f"Preprocessor initialization failed: {str(e)}")
             preprocessor = None
@@ -373,12 +375,23 @@ def verify_token(authorization: Optional[str] = Header(None)) -> dict:
     except Exception as e:
         logger.error(f"Token verification failed: {str(e)}")
         raise HTTPException(status_code=401, detail="Invalid token")
-# Initialize on startup
+# Initialize on startup - LAZY LOADING for memory optimization
 @app.on_event("startup")
 async def startup_event():
-    """Initialize models on startup"""
-    if not initialize_models():
-        logger.warning("Models not initialized at startup - will try on first request")
+    """Initialize only analyzer on startup (lazy load preprocessor)"""
+    global analyzer
+    try:
+        # Initialize analyzer only (AWS Bedrock - no local memory)
+        from model_analyzer import ModelAnalyzer
+        analyzer = ModelAnalyzer(
+            supabase_url=SUPABASE_URL,
+            supabase_key=SUPABASE_KEY
+        )
+        logger.info("✓ Analyzer initialized (AWS Bedrock - 0MB RAM)")
+        logger.info("📊 Preprocessor will lazy-load on first mood entry (saves ~100MB)")
+    except Exception as e:
+        logger.warning(f"Analyzer initialization failed: {str(e)}")
+        analyzer = None
 
 def verify_token(authorization: Optional[str] = Header(None)) -> dict:
     """Verify JWT token from header"""
@@ -405,7 +418,7 @@ def verify_token(authorization: Optional[str] = Header(None)) -> dict:
 @app.get("/")
 async def root():
     """Redirect to API info"""
-    return {"message": "Wellness Activity Recommender API", "version": "2.0.0"}
+    return {"message": "Wellness Activity Recommender API", "version": "2.0.1", "updated": "2025-10-24"}
 
 # Mount static files from script folder
 if SCRIPT_DIR.exists():
@@ -435,6 +448,35 @@ async def health_check():
 
 # ============================================
 # PROFILE ENDPOINTS
+
+@app.get("/api/profile/{user_id}")
+async def get_profile(
+    user_id: str,
+    user_id_obj: dict = Depends(verify_token)
+):
+    """Get user profile/habit data from Supabase"""
+    try:
+        logger.info(f"Fetching profile for user {user_id}")
+        
+        # Fetch habit data from Supabase
+        response = supabase.table("habit").select("*").eq("id", user_id).execute()
+        
+        if not response.data:
+            raise HTTPException(status_code=404, detail="Profile not found")
+        
+        profile_data = response.data[0]
+        logger.info(f"Profile fetched successfully for user {user_id}")
+        
+        return JSONResponse({
+            "status": "success",
+            "data": profile_data
+        })
+        
+    except HTTPException as he:
+        raise he
+    except Exception as e:
+        logger.error(f"Error fetching profile: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Profile fetch error: {str(e)}")
 
 @app.post("/api/profile")
 async def save_profile(
@@ -507,186 +549,283 @@ async def save_profile(
 
 @app.post("/api/mood")
 async def submit_mood(
-    id: str = Form(...),
-    user_id_obj: dict = Depends(verify_token),
-    mood_text: str = Form(...),
-    mood_audio: UploadFile = File(None),
-    mood_image: UploadFile = File(None)
+    request: Request
 ):
-    """Submit mood entry: store raw inputs in Supabase Storage, then trigger preprocessing by user id"""
+    """Submit mood entry: accepts JSON with URLs or form-data with files"""
+    global preprocessor, analyzer  # Access global model instances
+    logger.info("=== MOOD ENDPOINT CALLED ===")
     try:
-        # Use the id from the form parameter directly
-        logger.info(f"Processing mood entry for user: {id}")
+        # Log all headers for debugging
+        logger.info(f"Request headers: {dict(request.headers)}")
         
-        # 1) Upload raw inputs to Supabase Storage under bucket/<user_id>/
-        ts = datetime.now().strftime('%Y%m%d_%H%M%S')
-        folder = f"{id}"
-        audio_key = None
-        image_key = None
-        text_key = f"{folder}/{ts}_text.txt"
+        content_type = request.headers.get("content-type", "")
+        logger.info(f"Content-Type: {content_type}")
         
-        try:
-            # Ensure storage bucket exists (no-op if present)
-            storage = supabase.storage
-            bucket_name = os.getenv("SUPABASE_MEDIA_BUCKET", "mood-media")
+        # Handle JSON (URLs from frontend Supabase upload)
+        if "application/json" in content_type:
+            import json as json_lib
+            body_bytes = await request.body()
+            logger.info(f"Raw body length: {len(body_bytes)}")
+            logger.info(f"Raw body preview: {body_bytes[:500]}")
+            
+            if len(body_bytes) == 0:
+                logger.error("ERROR: Request body is EMPTY!")
+                raise HTTPException(status_code=400, detail="Request body is empty")
+            
             try:
-                storage.create_bucket(bucket_name)
-            except Exception:
-                pass
+                data = json_lib.loads(body_bytes)
+                logger.info(f"✓ Successfully parsed JSON data")
+                logger.info(f"Data keys: {list(data.keys())}")
+                logger.info(f"Full data: {data}")
+            except Exception as parse_error:
+                logger.error(f"ERROR parsing JSON: {str(parse_error)}")
+                logger.error(f"Body content: {body_bytes.decode('utf-8', errors='replace')}")
+                raise HTTPException(status_code=400, detail=f"Invalid JSON: {str(parse_error)}")
             
-            # Upload audio
-            if mood_audio and mood_audio.filename:
-                audio_bytes = await mood_audio.read()
-                audio_key = f"{folder}/{ts}_{mood_audio.filename}"
-                storage.from_(bucket_name).upload(path=audio_key, file=audio_bytes, file_options={
-                    "contentType": mood_audio.content_type or "application/octet-stream",
-                    "upsert": True
-                })
-                logger.info(f"✓ Uploaded audio to storage: {audio_key}")
+            user_id = data.get("id")
+            mood_text = data.get("mood_text")
+            audio_url = data.get("audio_url")
+            image_url = data.get("image_url")
             
-            # Upload image
-            if mood_image and mood_image.filename:
-                image_bytes = await mood_image.read()
-                image_key = f"{folder}/{ts}_{mood_image.filename}"
-                storage.from_(bucket_name).upload(path=image_key, file=image_bytes, file_options={
-                    "contentType": mood_image.content_type or "application/octet-stream",
-                    "upsert": True
-                })
-                logger.info(f"✓ Uploaded image to storage: {image_key}")
+            logger.info(f"Processing mood entry via URLs for user: {user_id}")
+            logger.info(f"Audio URL: {audio_url}")
+            logger.info(f"Image URL: {image_url}")
             
-            # Upload text
-            if mood_text:
-                storage.from_(bucket_name).upload(path=text_key, file=mood_text.encode("utf-8"), file_options={
-                    "contentType": "text/plain",
-                    "upsert": True
-                })
-                logger.info(f"✓ Uploaded text to storage: {text_key}")
-        except Exception as e:
-            logger.warning(f"Storage upload failed (will continue with local processing): {str(e)}")
-        
-        # 2) Trigger preprocessing from Supabase (preferred path)
-        if preprocessor and analyzer:
-            logger.info("Using ML models - fetching latest media from Supabase storage")
-            try:
-                preprocessed_data = preprocessor.preprocess_from_supabase(
-                    user_id=id,
-                    analyze=True
-                )
-                
-                # Extract actual recommendations from analysis result
-                analysis_result = preprocessed_data.get("analysis_result", {})
-                
-                # Debug logging
-                logger.info(f"Preprocessed data keys: {list(preprocessed_data.keys())}")
-                logger.info(f"Analysis result: {analysis_result is not None}")
-                
-                if analysis_result:
-                    logger.info(f"Analysis result keys: {list(analysis_result.keys())}")
-                    rec_preview = str(analysis_result.get('analysis', ''))[:100]
-                    logger.info(f"Recommendations preview: {rec_preview}...")
-                    recommendations = analysis_result.get("analysis", "")
-                else:
-                    logger.warning("⚠️ No analysis_result found - analysis may have failed")
-                    recommendations = ""
-                
-                # Fallback if no recommendations generated
-                if not recommendations or recommendations == "":
-                    recommendations = "Analysis in progress - recommendations will be available in your report shortly."
-                    logger.warning("Using fallback recommendation message")
-                
-                # Save mood entry to database
-                mood_data = {
-                    "id": id,
-                    "mood_text": mood_text,
-                    "audio_transcript": preprocessed_data.get("audio_transcript", ""),
-                    "emotion": preprocessed_data.get("emotion", ""),
-                    "emotion_confidence": preprocessed_data.get("emotion_confidence", 0),
-                    "recommendations": recommendations,
-                    "created_at": datetime.now().isoformat()
-                }
-                
-                supabase.table("mood_entries").insert(mood_data).execute()
-                logger.info("Mood entry saved to database and report updated")
-                
-                return JSONResponse({
-                    "status": "success",
-                    "message": "Mood processed successfully with ML models and report updated",
-                    "data": {
-                        "user_id": id,
+            # Download files from URLs if provided
+            import requests
+            import tempfile
+            
+            audio_path = None
+            image_path = None
+            
+            if audio_url:
+                resp = requests.get(audio_url)
+                audio_path = tempfile.NamedTemporaryFile(delete=False, suffix=".audio").name
+                with open(audio_path, "wb") as f:
+                    f.write(resp.content)
+                logger.info(f"Downloaded audio to: {audio_path}")
+            
+            if image_url:
+                resp = requests.get(image_url)
+                image_path = tempfile.NamedTemporaryFile(delete=False, suffix=".jpg").name
+                with open(image_path, "wb") as f:
+                    f.write(resp.content)
+                logger.info(f"Downloaded image to: {image_path}")
+            
+            # Process with ML models
+            logger.info(f"🔍 Model availability check - preprocessor: {preprocessor is not None}, analyzer: {analyzer is not None}")
+            
+            if not preprocessor or not analyzer:
+                logger.warning("⚠️ Models not initialized, attempting to initialize...")
+                initialize_models()
+                logger.info(f"After init - preprocessor: {preprocessor is not None}, analyzer: {analyzer is not None}")
+            
+            # Use analyzer - either with preprocessor (full multimodal) or text-only
+            if analyzer:
+                if preprocessor:
+                    # Full multimodal processing with audio/image
+                    logger.info("✓ Using FULL ML pipeline (Preprocessor + Analyzer)")
+                    logger.info(f"📝 Inputs - text: {mood_text[:50] if mood_text else 'None'}, audio: {audio_path}, image: {image_path}")
+                    
+                    try:
+                        preprocessed_data = preprocessor.preprocess(
+                            audio_path=audio_path,
+                            image_path=image_path,
+                            text_input=mood_text,
+                            user_id=user_id,
+                            analyze=True
+                        )
+                        logger.info(f"✓ Preprocessing completed successfully")
+                        logger.info(f"📊 Result keys: {list(preprocessed_data.keys())}")
+                    except Exception as preprocess_error:
+                        logger.error(f"❌ Preprocessing error: {str(preprocess_error)}")
+                        logger.error(f"Error details: {type(preprocess_error).__name__}")
+                        import traceback
+                        logger.error(traceback.format_exc())
+                        raise
+                    
+                    # Cleanup temp files
+                    if audio_path and os.path.exists(audio_path):
+                        os.unlink(audio_path)
+                    if image_path and os.path.exists(image_path):
+                        os.unlink(image_path)
+                    
+                    analysis_result = preprocessed_data.get("analysis_result", {})
+                    recommendations = analysis_result.get("analysis", "") if analysis_result else ""
+                    
+                    if not recommendations:
+                        recommendations = "Analysis in progress - recommendations will be available shortly."
+                    
+                    # Save to database
+                    mood_entry = {
+                        "id": user_id,
                         "mood_text": mood_text,
                         "audio_transcript": preprocessed_data.get("audio_transcript", ""),
                         "emotion": preprocessed_data.get("emotion", ""),
                         "emotion_confidence": preprocessed_data.get("emotion_confidence", 0),
                         "recommendations": recommendations,
-                        "mood": analysis_result.get("mood", "") if analysis_result else "",
-                        "stress_level": analysis_result.get("stress_level", 0) if analysis_result else 0,
-                        "stress_day": analysis_result.get("stress_day", 0) if analysis_result else 0,
-                        "stress_alert": analysis_result.get("stress_alert", None) if analysis_result else None,
+                        "created_at": datetime.now().isoformat()
+                    }
+                    
+                    supabase.table("mood_entries").insert(mood_entry).execute()
+                    
+                    return JSONResponse({
+                        "status": "success",
+                        "message": "Mood processed successfully with full ML pipeline",
+                        "data": {
+                            "user_id": user_id,
+                            "mood_text": mood_text,
+                            "audio_transcript": preprocessed_data.get("audio_transcript", ""),
+                            "emotion": preprocessed_data.get("emotion", ""),
+                            "emotion_confidence": preprocessed_data.get("emotion_confidence", 0),
+                            "recommendations": recommendations,
+                            "mood": analysis_result.get("mood", "") if analysis_result else "",
+                            "stress_level": analysis_result.get("stress_level", 0) if analysis_result else 0,
+                            "stress_day": analysis_result.get("stress_day", 0) if analysis_result else 0,
+                            "stress_alert": analysis_result.get("stress_alert", None) if analysis_result else None,
+                            "timestamp": datetime.now().isoformat()
+                        }
+                    })
+                else:
+                    # Text-only mode: Use analyzer directly without preprocessor
+                    logger.info("✓ Using TEXT-ONLY mode (Analyzer without preprocessor)")
+                    logger.info(f"📝 Text input: {mood_text[:100] if mood_text else 'None'}")
+                    logger.warning("⚠️ Audio/image processing unavailable - proceeding with text only")
+                    
+                    # Call analyzer directly with text
+                    simple_data = {
+                        "text": mood_text,
+                        "audio_transcript": "",
+                        "emotion": "",
+                        "emotion_confidence": 0.0,
+                        "has_audio": False,
+                        "has_image": False,
+                        "has_text": bool(mood_text)
+                    }
+                    
+                    try:
+                        analysis_result = analyzer.analyze(user_id, simple_data)
+                        logger.info(f"✓ Analyzer completed successfully")
+                        
+                        recommendations = analysis_result.get("analysis", "") if analysis_result else ""
+                        if not recommendations:
+                            recommendations = "Analysis in progress - recommendations will be available shortly."
+                        
+                        # Save to database
+                        mood_entry = {
+                            "id": user_id,
+                            "mood_text": mood_text,
+                            "audio_transcript": "",
+                            "emotion": "",
+                            "emotion_confidence": 0,
+                            "recommendations": recommendations,
+                            "created_at": datetime.now().isoformat()
+                        }
+                        
+                        supabase.table("mood_entries").insert(mood_entry).execute()
+                        
+                        return JSONResponse({
+                            "status": "success",
+                            "message": "Mood processed with text-only analysis (AWS Bedrock)",
+                            "data": {
+                                "user_id": user_id,
+                                "mood_text": mood_text,
+                                "audio_transcript": "",
+                                "emotion": "",
+                                "emotion_confidence": 0,
+                                "recommendations": recommendations,
+                                "mood": analysis_result.get("mood", "") if analysis_result else "",
+                                "stress_level": analysis_result.get("stress_level", 0) if analysis_result else 0,
+                                "stress_day": analysis_result.get("stress_day", 0) if analysis_result else 0,
+                                "stress_alert": analysis_result.get("stress_alert", None) if analysis_result else None,
+                                "timestamp": datetime.now().isoformat()
+                            }
+                        })
+                    except Exception as analyzer_error:
+                        logger.error(f"❌ Analyzer error: {str(analyzer_error)}")
+                        import traceback
+                        logger.error(traceback.format_exc())
+                        # Fall through to fallback
+            
+            # Fallback - models not available
+            logger.warning("⚠️ USING FALLBACK ANALYSIS - ML models not available")
+            logger.warning(f"Preprocessor available: {preprocessor is not None}")
+            logger.warning(f"Analyzer available: {analyzer is not None}")
+            mood_analysis = analyze_mood_text(mood_text)
+            return JSONResponse({
+                "status": "success",
+                "message": "Mood processed with fallback",
+                "data": {
+                    "user_id": user_id,
+                    "mood_text": mood_text,
+                    "emotion": mood_analysis["emotion"],
+                    "emotion_confidence": mood_analysis["confidence"],
+                    "recommendations": mood_analysis["recommendations"],
+                    "timestamp": datetime.now().isoformat()
+                }
+            })
+        
+        # Handle multipart/form-data (legacy: files uploaded directly)
+        else:
+            form = await request.form()
+            user_id = form.get("id")
+            mood_text = form.get("mood_text")
+            mood_audio = form.get("mood_audio")
+            mood_image = form.get("mood_image")
+            
+            logger.info(f"Processing mood entry via form-data for user: {user_id}")
+            
+            # Save files
+            audio_path = None
+            image_path = None
+            
+            if mood_audio:
+                audio_path = TEMP_DIR / f"audio_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{mood_audio.filename}"
+                with open(audio_path, "wb") as f:
+                    f.write(await mood_audio.read())
+            
+            if mood_image:
+                image_path = TEMP_DIR / f"image_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{mood_image.filename}"
+                with open(image_path, "wb") as f:
+                    f.write(await mood_image.read())
+            
+            # Process with ML
+            if preprocessor and analyzer:
+                preprocessed_data = preprocessor.preprocess(
+                    audio_path=str(audio_path) if audio_path else None,
+                    image_path=str(image_path) if image_path else None,
+                    text_input=mood_text,
+                    user_id=user_id,
+                    analyze=True
+                )
+                
+                analysis_result = preprocessed_data.get("analysis_result", {})
+                recommendations = analysis_result.get("analysis", "") if analysis_result else ""
+                
+                return JSONResponse({
+                    "status": "success",
+                    "data": {
+                        "user_id": user_id,
+                        "recommendations": recommendations,
                         "timestamp": datetime.now().isoformat()
                     }
                 })
-                
-            except Exception as ml_error:
-                logger.warning(f"ML processing failed, falling back to simple analysis: {str(ml_error)}")
-        
-        # Fallback to simple analysis
-        logger.info("Using simple mood analysis (ML models not available)")
-        mood_analysis = analyze_mood_text(mood_text)
-        
-        # Create preprocessed data structure for report generation
-        preprocessed_data = {
-            "text": mood_text,
-            "audio_transcript": "Audio processing not available",
-            "emotion": mood_analysis["emotion"],
-            "emotion_confidence": mood_analysis["confidence"],
-            "emotion_details": {},
-            "has_text": True,
-            "has_audio": False,
-            "has_image": False
-        }
-        
-        # Save mood entry to database
-        mood_data = {
-            "id": id,
-            "mood_text": mood_text,
-            "audio_transcript": "Audio processing not available",
-            "emotion": mood_analysis["emotion"],
-            "emotion_confidence": mood_analysis["confidence"],
-            "recommendations": str(mood_analysis["recommendations"]),
-            "created_at": datetime.now().isoformat()
-        }
-        
-        try:
-            supabase.table("mood_entries").insert(mood_data).execute()
-            logger.info("Mood entry saved to database")
-        except Exception as e:
-            logger.warning(f"Could not save to database: {str(e)}")
-        
-        # Update report with the mood data (fallback case)
-        try:
-            logger.info(f"Updating report for user {id} with fallback mood data")
-            process_user(id, preprocessed_data=preprocessed_data)
-            logger.info("Report updated successfully in fallback mode")
-        except Exception as e:
-            logger.warning(f"Could not update report: {str(e)}")
-        
-        return JSONResponse({
-            "status": "success",
-            "message": "Mood processed successfully and report updated",
-            "data": {
-                "user_id": id,
-                "mood_text": mood_text,
-                "audio_transcript": "Audio processing not available",
-                "emotion": mood_analysis["emotion"],
-                "emotion_confidence": mood_analysis["confidence"],
-                "recommendations": mood_analysis["recommendations"],
-                "timestamp": datetime.now().isoformat()
-            }
-        })
-        
+            
+            # Fallback
+            mood_analysis = analyze_mood_text(mood_text)
+            return JSONResponse({
+                "status": "success",
+                "data": {
+                    "user_id": user_id,
+                    "recommendations": mood_analysis["recommendations"],
+                    "timestamp": datetime.now().isoformat()
+                }
+            })
+    
     except Exception as e:
         logger.error(f"Error processing mood: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Mood processing error: {str(e)}")
+
 
 def analyze_mood_text(text: str) -> dict:
     """Simple mood analysis based on keywords"""
