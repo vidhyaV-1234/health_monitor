@@ -39,6 +39,17 @@ except Exception as e:
     def process_user(*args, **kwargs):
         pass
 
+try:
+    from google_calendar_service import GoogleCalendarService
+    from push_notification_service import PushNotificationService
+    from location_tracking_service import LocationTrackingService
+except Exception as e:
+    logger_temp = logging.getLogger(__name__)
+    logger_temp.warning(f"⚠️ Could not import calendar/notification/location services: {str(e)}")
+    GoogleCalendarService = None
+    PushNotificationService = None
+    LocationTrackingService = None
+
 # Removed: MultimodalPreprocessor causes threading crash with torch
 # Only needed for mood processing endpoints, not auth
 MultimodalPreprocessor = None
@@ -101,6 +112,9 @@ TEMP_DIR.mkdir(exist_ok=True)
 # Initialize models
 preprocessor = None
 analyzer = None
+calendar_service = None
+notification_service = None
+location_service = None
 
 def initialize_models():
     """Initialize preprocessor and analyzer"""
@@ -379,7 +393,7 @@ def verify_token(authorization: Optional[str] = Header(None)) -> dict:
 @app.on_event("startup")
 async def startup_event():
     """Initialize only analyzer on startup (lazy load preprocessor)"""
-    global analyzer
+    global analyzer, calendar_service, notification_service, location_service
     try:
         # Initialize analyzer only (AWS Bedrock - no local memory)
         from model_analyzer import ModelAnalyzer
@@ -389,8 +403,22 @@ async def startup_event():
         )
         logger.info("✓ Analyzer initialized (AWS Bedrock - 0MB RAM)")
         logger.info("📊 Preprocessor will lazy-load on first mood entry (saves ~100MB)")
+        
+        # Initialize calendar and notification services
+        if GoogleCalendarService:
+            calendar_service = GoogleCalendarService(supabase)
+            logger.info("✓ Google Calendar Service initialized")
+        
+        if PushNotificationService:
+            notification_service = PushNotificationService(supabase)
+            logger.info("✓ Push Notification Service initialized")
+        
+        if LocationTrackingService:
+            location_service = LocationTrackingService(supabase)
+            logger.info("✓ Location Tracking Service initialized")
+        
     except Exception as e:
-        logger.warning(f"Analyzer initialization failed: {str(e)}")
+        logger.warning(f"Initialization failed: {str(e)}")
         analyzer = None
 
 def verify_token(authorization: Optional[str] = Header(None)) -> dict:
@@ -445,6 +473,19 @@ async def health_check():
             "region": "us-east-1"
         }
     }
+
+@app.options("/{rest_of_path:path}")
+async def preflight_handler(rest_of_path: str):
+    """Handle CORS preflight requests"""
+    return JSONResponse(
+        content={"message": "OK"},
+        headers={
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS, PATCH",
+            "Access-Control-Allow-Headers": "*",
+            "Access-Control-Max-Age": "3600",
+        }
+    )
 
 # ============================================
 # PROFILE ENDPOINTS
@@ -551,9 +592,9 @@ async def save_profile(
 async def submit_mood(
     request: Request
 ):
-    """Submit mood entry: accepts JSON with URLs or form-data with files"""
+    """Submit mood entry: accepts JSON with URLs or form-data with files - ALL INPUTS ARE OPTIONAL"""
     global preprocessor, analyzer  # Access global model instances
-    logger.info("=== MOOD ENDPOINT CALLED ===")
+    logger.info("=== MOOD ENDPOINT CALLED (OPTIONAL INPUTS) ===")
     try:
         # Log all headers for debugging
         logger.info(f"Request headers: {dict(request.headers)}")
@@ -583,13 +624,22 @@ async def submit_mood(
                 raise HTTPException(status_code=400, detail=f"Invalid JSON: {str(parse_error)}")
             
             user_id = data.get("id")
-            mood_text = data.get("mood_text")
-            audio_url = data.get("audio_url")
-            image_url = data.get("image_url")
+            mood_text = data.get("mood_text")  # OPTIONAL
+            audio_url = data.get("audio_url")  # OPTIONAL
+            image_url = data.get("image_url")  # OPTIONAL
+            
+            # Check if at least one input is provided
+            has_any_input = mood_text or audio_url or image_url
             
             logger.info(f"Processing mood entry via URLs for user: {user_id}")
-            logger.info(f"Audio URL: {audio_url}")
-            logger.info(f"Image URL: {image_url}")
+            logger.info(f"Text: {'Yes' if mood_text else 'No'}")
+            logger.info(f"Audio URL: {'Yes' if audio_url else 'No'}")
+            logger.info(f"Image URL: {'Yes' if image_url else 'No'}")
+            
+            if not has_any_input:
+                # Allow empty mood entry if user has push notification or calendar data
+                logger.info("No media inputs provided - checking for alternative data sources...")
+                # This is still valid - we'll use push notification + calendar data
             
             # Download files from URLs if provided
             import requests
@@ -598,19 +648,28 @@ async def submit_mood(
             audio_path = None
             image_path = None
             
+            # Download files only if URLs are provided
             if audio_url:
-                resp = requests.get(audio_url)
-                audio_path = tempfile.NamedTemporaryFile(delete=False, suffix=".audio").name
-                with open(audio_path, "wb") as f:
-                    f.write(resp.content)
-                logger.info(f"Downloaded audio to: {audio_path}")
+                try:
+                    resp = requests.get(audio_url)
+                    audio_path = tempfile.NamedTemporaryFile(delete=False, suffix=".audio").name
+                    with open(audio_path, "wb") as f:
+                        f.write(resp.content)
+                    logger.info(f"✓ Downloaded audio to: {audio_path}")
+                except Exception as e:
+                    logger.warning(f"⚠️ Failed to download audio: {str(e)}")
+                    audio_path = None
             
             if image_url:
-                resp = requests.get(image_url)
-                image_path = tempfile.NamedTemporaryFile(delete=False, suffix=".jpg").name
-                with open(image_path, "wb") as f:
-                    f.write(resp.content)
-                logger.info(f"Downloaded image to: {image_path}")
+                try:
+                    resp = requests.get(image_url)
+                    image_path = tempfile.NamedTemporaryFile(delete=False, suffix=".jpg").name
+                    with open(image_path, "wb") as f:
+                        f.write(resp.content)
+                    logger.info(f"✓ Downloaded image to: {image_path}")
+                except Exception as e:
+                    logger.warning(f"⚠️ Failed to download image: {str(e)}")
+                    image_path = None
             
             # Process with ML models
             logger.info(f"🔍 Model availability check - preprocessor: {preprocessor is not None}, analyzer: {analyzer is not None}")
@@ -1088,6 +1147,389 @@ async def update_report(user_id: str = Form(...)):
     except Exception as e:
         logger.error(f"Error updating report: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Report update error: {str(e)}")
+
+# ============================================
+# PUSH NOTIFICATION ENDPOINTS
+# ============================================
+
+@app.post("/api/notifications/register")
+async def register_device_token(
+    user_id: str = Form(...),
+    fcm_token: str = Form(...),
+    user_id_obj: dict = Depends(verify_token)
+):
+    """Register user's device for push notifications"""
+    try:
+        if not notification_service:
+            raise HTTPException(status_code=503, detail="Notification service not available")
+        
+        success = notification_service.register_device(user_id, fcm_token)
+        
+        if success:
+            return JSONResponse({
+                "status": "success",
+                "message": "Device registered for notifications"
+            })
+        else:
+            raise HTTPException(status_code=500, detail="Failed to register device")
+    
+    except Exception as e:
+        logger.error(f"Error registering device: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/notifications/response")
+async def save_notification_response(
+    user_id: str = Form(...),
+    notification_type: str = Form(...),
+    emotion_response: str = Form(...),
+    additional_notes: str = Form(default=None),
+    user_id_obj: dict = Depends(verify_token)
+):
+    """Save user's response to push notification"""
+    try:
+        if not notification_service:
+            raise HTTPException(status_code=503, detail="Notification service not available")
+        
+        success = notification_service.save_notification_response(
+            user_id, notification_type, emotion_response, additional_notes
+        )
+        
+        if success:
+            return JSONResponse({
+                "status": "success",
+                "message": "Response saved successfully"
+            })
+        else:
+            raise HTTPException(status_code=500, detail="Failed to save response")
+    
+    except Exception as e:
+        logger.error(f"Error saving notification response: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/notifications/responses/{user_id}")
+async def get_notification_responses(
+    user_id: str,
+    limit: int = 7,
+    user_id_obj: dict = Depends(verify_token)
+):
+    """Get user's recent notification responses"""
+    try:
+        if not notification_service:
+            raise HTTPException(status_code=503, detail="Notification service not available")
+        
+        responses = notification_service.get_latest_responses(user_id, limit)
+        
+        return JSONResponse({
+            "status": "success",
+            "data": responses,
+            "count": len(responses)
+        })
+    
+    except Exception as e:
+        logger.error(f"Error retrieving responses: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/notifications/send-morning")
+async def trigger_morning_notification(
+    user_id: str = Form(...),
+    user_id_obj: dict = Depends(verify_token)
+):
+    """Manually trigger morning notification for testing"""
+    try:
+        if not notification_service:
+            raise HTTPException(status_code=503, detail="Notification service not available")
+        
+        response = notification_service.send_morning_notification(user_id)
+        
+        if response:
+            return JSONResponse({
+                "status": "success",
+                "message": "Morning notification sent",
+                "response_id": response
+            })
+        else:
+            raise HTTPException(status_code=500, detail="Failed to send notification")
+    
+    except Exception as e:
+        logger.error(f"Error sending morning notification: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/notifications/send-evening")
+async def trigger_evening_notification(
+    user_id: str = Form(...),
+    user_id_obj: dict = Depends(verify_token)
+):
+    """Manually trigger evening notification for testing"""
+    try:
+        if not notification_service:
+            raise HTTPException(status_code=503, detail="Notification service not available")
+        
+        response = notification_service.send_evening_notification(user_id)
+        
+        if response:
+            return JSONResponse({
+                "status": "success",
+                "message": "Evening notification sent",
+                "response_id": response
+            })
+        else:
+            raise HTTPException(status_code=500, detail="Failed to send notification")
+    
+    except Exception as e:
+        logger.error(f"Error sending evening notification: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/notifications/toggle")
+async def toggle_notifications(
+    user_id: str = Form(...),
+    enabled: bool = Form(...),
+    user_id_obj: dict = Depends(verify_token)
+):
+    """Enable or disable notifications for a user"""
+    try:
+        if not notification_service:
+            raise HTTPException(status_code=503, detail="Notification service not available")
+        
+        success = notification_service.toggle_notifications(user_id, enabled)
+        
+        if success:
+            return JSONResponse({
+                "status": "success",
+                "message": f"Notifications {'enabled' if enabled else 'disabled'}"
+            })
+        else:
+            raise HTTPException(status_code=500, detail="Failed to update notification settings")
+    
+    except Exception as e:
+        logger.error(f"Error toggling notifications: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+# ============================================
+# GOOGLE CALENDAR ENDPOINTS
+# ============================================
+
+@app.get("/api/calendar/authorize/{user_id}")
+async def authorize_calendar(
+    user_id: str,
+    user_id_obj: dict = Depends(verify_token)
+):
+    """Start Google Calendar authorization flow"""
+    try:
+        if not calendar_service:
+            raise HTTPException(status_code=503, detail="Calendar service not available")
+        
+        # This would redirect to Google OAuth flow
+        # For now, return authorization URL structure
+        return JSONResponse({
+            "status": "pending",
+            "message": "Calendar authorization required",
+            "auth_url": f"https://accounts.google.com/o/oauth2/auth?client_id=YOUR_CLIENT_ID&redirect_uri=YOUR_REDIRECT&scope=calendar.readonly"
+        })
+    
+    except Exception as e:
+        logger.error(f"Error starting calendar auth: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/calendar/fetch/{user_id}")
+async def fetch_calendar_data(
+    user_id: str,
+    user_id_obj: dict = Depends(verify_token)
+):
+    """Fetch today's calendar events for user"""
+    try:
+        if not calendar_service:
+            raise HTTPException(status_code=503, detail="Calendar service not available")
+        
+        calendar_data = calendar_service.fetch_today_events(user_id)
+        
+        if calendar_data:
+            return JSONResponse({
+                "status": "success",
+                "data": calendar_data
+            })
+        else:
+            return JSONResponse({
+                "status": "no_data",
+                "message": "No calendar data available. Please authorize Google Calendar."
+            })
+    
+    except Exception as e:
+        logger.error(f"Error fetching calendar: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/calendar/latest/{user_id}")
+async def get_latest_calendar_data(
+    user_id: str,
+    user_id_obj: dict = Depends(verify_token)
+):
+    """Get the most recent calendar data for user"""
+    try:
+        if not calendar_service:
+            raise HTTPException(status_code=503, detail="Calendar service not available")
+        
+        calendar_data = calendar_service.get_latest_calendar_data(user_id)
+        
+        if calendar_data:
+            return JSONResponse({
+                "status": "success",
+                "data": calendar_data
+            })
+        else:
+            return JSONResponse({
+                "status": "no_data",
+                "message": "No calendar data found"
+            })
+    
+    except Exception as e:
+        logger.error(f"Error retrieving calendar data: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+# ============================================
+# LOCATION TRACKING ENDPOINTS
+# ============================================
+
+@app.post("/api/location/track")
+async def track_location(
+    user_id: str = Form(...),
+    latitude: float = Form(...),
+    longitude: float = Form(...),
+    activity_type: str = Form(default=None),
+    accuracy: float = Form(default=None),
+    user_id_obj: dict = Depends(verify_token)
+):
+    """Track user's current location"""
+    try:
+        if not location_service:
+            raise HTTPException(status_code=503, detail="Location service not available")
+        
+        success = location_service.track_location(
+            user_id, latitude, longitude, activity_type, accuracy
+        )
+        
+        if success:
+            return JSONResponse({
+                "status": "success",
+                "message": "Location tracked successfully"
+            })
+        else:
+            raise HTTPException(status_code=500, detail="Failed to track location")
+    
+    except Exception as e:
+        logger.error(f"Error tracking location: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/location/save-place")
+async def save_frequent_place(
+    user_id: str = Form(...),
+    location_type: str = Form(...),
+    latitude: float = Form(...),
+    longitude: float = Form(...),
+    location_name: str = Form(default=None),
+    radius_meters: float = Form(default=100),
+    user_id_obj: dict = Depends(verify_token)
+):
+    """Save a frequent location (home, office, etc.)"""
+    try:
+        if not location_service:
+            raise HTTPException(status_code=503, detail="Location service not available")
+        
+        success = location_service.save_frequent_location(
+            user_id, location_type, latitude, longitude, location_name, radius_meters
+        )
+        
+        if success:
+            return JSONResponse({
+                "status": "success",
+                "message": f"{location_type.capitalize()} location saved"
+            })
+        else:
+            raise HTTPException(status_code=500, detail="Failed to save location")
+    
+    except Exception as e:
+        logger.error(f"Error saving location: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/location/analyze-day")
+async def analyze_daily_location(
+    user_id: str = Form(...),
+    date: str = Form(default=None),
+    user_id_obj: dict = Depends(verify_token)
+):
+    """Analyze location data for a specific day"""
+    try:
+        if not location_service:
+            raise HTTPException(status_code=503, detail="Location service not available")
+        
+        from datetime import datetime
+        target_date = datetime.fromisoformat(date).date() if date else None
+        
+        summary = location_service.analyze_daily_locations(user_id, target_date)
+        
+        if summary:
+            # Save summary to database
+            location_service.save_daily_summary(user_id, summary)
+            
+            return JSONResponse({
+                "status": "success",
+                "data": summary
+            })
+        else:
+            return JSONResponse({
+                "status": "no_data",
+                "message": "No location data available for this day"
+            })
+    
+    except Exception as e:
+        logger.error(f"Error analyzing location: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/location/summary/{user_id}")
+async def get_location_summary(
+    user_id: str,
+    user_id_obj: dict = Depends(verify_token)
+):
+    """Get latest daily location summary"""
+    try:
+        if not location_service:
+            raise HTTPException(status_code=503, detail="Location service not available")
+        
+        summary = location_service.get_latest_summary(user_id)
+        
+        if summary:
+            return JSONResponse({
+                "status": "success",
+                "data": summary
+            })
+        else:
+            return JSONResponse({
+                "status": "no_data",
+                "message": "No location summary available"
+            })
+    
+    except Exception as e:
+        logger.error(f"Error retrieving location summary: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/location/saved/{user_id}")
+async def get_saved_locations(
+    user_id: str,
+    user_id_obj: dict = Depends(verify_token)
+):
+    """Get user's saved locations"""
+    try:
+        result = supabase.table("saved_locations")\
+            .select("*")\
+            .eq("id", user_id)\
+            .execute()
+        
+        return JSONResponse({
+            "status": "success",
+            "data": result.data if result.data else []
+        })
+    
+    except Exception as e:
+        logger.error(f"Error retrieving saved locations: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 # ============================================
 # STRESS NOTIFICATION ENDPOINTS

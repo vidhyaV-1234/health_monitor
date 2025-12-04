@@ -26,5 +26,14 @@ opencv-python-headless>=4.8.0  # Required by DeepFace (lightweight)
 Pillow>=10.0.0  # Image handling
 tf-keras>=2.16.0  # Lightweight Keras (required by DeepFace)
 
+# Google Calendar API
+google-auth>=2.23.0
+google-auth-oauthlib>=1.1.0
+google-auth-httplib2>=0.1.1
+google-api-python-client>=2.100.0
+
+# Firebase for Push Notifications
+firebase-admin>=6.2.0
+
 # Prevent Rust build issues on Render
 --only-binary :all:

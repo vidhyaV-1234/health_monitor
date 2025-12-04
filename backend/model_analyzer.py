@@ -77,7 +77,7 @@ class ModelAnalyzer:
     def fetch_user_data(self, user_id):
         if not self.supabase:
             print("⚠️  Supabase not configured, skipping database fetch")
-            return None, None, None
+            return None, None, None, None, None
         
         try:
             print(f"\n📊 Fetching user data for ID: {user_id}")
@@ -86,14 +86,32 @@ class ModelAnalyzer:
             habit_response = self.supabase.table('habit').select('*').eq('id', user_id).execute()
             habit_data = habit_response.data[0] if habit_response.data and len(habit_response.data) > 0 else None
 
-            # Fetch combined_report and stress_day from 'report' table
-            report_response = self.supabase.table('report').select('combined_report, stress_day').eq('id', user_id).execute()
+            # Fetch combined_report, stress_day, and emotions from 'report' table
+            report_response = self.supabase.table('report').select('combined_report, stress_day, morning_emotion, evening_emotion, calendar_summary').eq('id', user_id).execute()
             if report_response.data and len(report_response.data) > 0:
                 combined_report = report_response.data[0].get('combined_report')
                 current_stress_day = report_response.data[0].get('stress_day', 0)
+                morning_emotion = report_response.data[0].get('morning_emotion')
+                evening_emotion = report_response.data[0].get('evening_emotion')
+                calendar_summary = report_response.data[0].get('calendar_summary')
             else:
                 combined_report = None
                 current_stress_day = 0
+                morning_emotion = None
+                evening_emotion = None
+                calendar_summary = None
+
+            # Fetch recent push notification responses (last 7 days)
+            notification_response = self.supabase.table('push_notification_responses').select('*').eq('id', user_id).order('timestamp', desc=True).limit(7).execute()
+            notification_data = notification_response.data if notification_response.data else []
+
+            # Fetch latest calendar data
+            calendar_response = self.supabase.table('calendar_data').select('*').eq('id', user_id).order('date', desc=True).limit(1).execute()
+            calendar_data = calendar_response.data[0] if calendar_response.data else None
+
+            # Fetch latest location summary
+            location_response = self.supabase.table('daily_location_summary').select('*').eq('id', user_id).order('date', desc=True).limit(1).execute()
+            location_data = location_response.data[0] if location_response.data else None
 
             print(f"✓ Data fetched successfully")
             if habit_data:
@@ -102,12 +120,26 @@ class ModelAnalyzer:
                 print("  → No habit data found")
             print(f"  → Combined report length: {len(combined_report) if combined_report else 0} chars")
             print(f"  → Current stress_day: {current_stress_day}")
+            print(f"  → Morning emotion: {morning_emotion}")
+            print(f"  → Evening emotion (previous): {evening_emotion}")
+            print(f"  → Notification responses: {len(notification_data)}")
+            print(f"  → Calendar data: {'Yes' if calendar_data else 'No'}")
+            print(f"  → Location data: {'Yes' if location_data else 'No'}")
             
-            return habit_data, combined_report, current_stress_day
+            # Combine notification, calendar, and location data
+            extended_data = {
+                'notification_data': notification_data,
+                'calendar_data': calendar_data,
+                'location_data': location_data,
+                'morning_emotion': morning_emotion,
+                'evening_emotion': evening_emotion
+            }
+            
+            return habit_data, combined_report, current_stress_day, extended_data
             
         except Exception as e:
             print(f"❌ Error fetching user data: {str(e)}")
-            return None, None, 0
+            return None, None, 0, None
     
     def update_stress_day(self, user_id, new_stress_day):
         """Update stress_day in the report table"""
@@ -235,8 +267,8 @@ class ModelAnalyzer:
         
         return " | ".join(key_info) if key_info else "No historical data available"
     
-    def construct_prompt(self, preprocessed_data, habit_data, combined_report):
-        print("\n🔨 Constructing prompt...")
+    def construct_prompt(self, preprocessed_data, habit_data, combined_report, extended_data):
+        print("\n🔨 Constructing prompt with extended data (notifications + calendar)...")
         
         # Extract only essential information
         user_summary = self.extract_key_info(habit_data, combined_report)
@@ -250,31 +282,96 @@ class ModelAnalyzer:
         if preprocessed_data.get('emotion'):
             current_state.append(f"Detected emotion: {preprocessed_data['emotion']} ({preprocessed_data['emotion_confidence']:.0%} confidence)")
         
-        current_context = " | ".join(current_state)
+        current_context = " | ".join(current_state) if current_state else "No direct input provided"
+        
+        # Add push notification emotion data
+        notification_context = ""
+        if extended_data and extended_data.get('notification_data'):
+            recent_emotions = [n.get('emotion_response') for n in extended_data['notification_data'][:3]]
+            if recent_emotions:
+                notification_context = f"\nRecent mood check-ins: {', '.join(filter(None, recent_emotions))}"
+        
+        if extended_data and extended_data.get('morning_emotion'):
+            notification_context += f"\nThis morning's emotion: {extended_data['morning_emotion']}"
+        
+        if extended_data and extended_data.get('evening_emotion'):
+            notification_context += f"\nLast evening's emotion: {extended_data['evening_emotion']}"
+        
+        # Add calendar context
+        calendar_context = ""
+        if extended_data and extended_data.get('calendar_data'):
+            cal = extended_data['calendar_data']
+            calendar_context = f"""
+CALENDAR DATA (Today's Schedule):
+- {cal.get('meeting_count', 0)} meetings scheduled
+- Total meeting hours: {cal.get('meeting_hours', 0)}
+- Free time blocks: {cal.get('free_blocks', 0)}
+- Lunch break: {'Yes' if cal.get('has_lunch_break') else 'No'}
+- Events summary: {cal.get('events_summary', 'None')}
+"""
+        
+        # Add location context
+        location_context = ""
+        if extended_data and extended_data.get('location_data'):
+            loc = extended_data['location_data']
+            location_context = f"""
+LOCATION DATA (Today's Activity):
+- Routine: {loc.get('routine_type', 'Unknown')}
+- Left home: {loc.get('left_home_time', 'N/A')}
+- Arrived office: {loc.get('arrived_office_time', 'N/A')}
+- Left office: {loc.get('left_office_time', 'N/A')}
+- Returned home: {loc.get('returned_home_time', 'N/A')}
+- Time at office: {loc.get('time_at_office_hours', 0):.1f} hours
+- Commute time: {loc.get('total_travel_time_minutes', 0):.0f} minutes
+- Time at gym: {loc.get('time_at_gym_minutes', 0):.0f} minutes
+- Time outdoors: {loc.get('time_outdoors_minutes', 0):.0f} minutes
+- Active minutes: {loc.get('active_minutes', 0):.0f}
+- Distance traveled: {loc.get('total_distance_km', 0):.1f} km
+{'- ⚠️ Late night out detected' if loc.get('late_night_out') else ''}
+{'- ⚠️ Excessive commute detected' if loc.get('excessive_commute') else ''}
+"""
         
         # Construct user prompt for Claude API
         prompt = f"""USER CONTEXT: {user_summary}
 
-CURRENT STATE: {current_context}
-based on the currect state of the user, understand the mood and stress level of the user. and generate the mood and stress level of the user.
-TASK: Recommend exactly 5 general health and wellness tips for TODAY based on the user's job type and lifestyle.
+CURRENT STATE: {current_context}{notification_context}
+
+{calendar_context}
+
+{location_context}
+
+TASK: Based on the user's current emotional state, schedule, location patterns, and lifestyle, recommend exactly 5 personalized health and wellness activities for TODAY.
 
 Guidelines:
-- Focus on **simple, practical health tips** tailored to their profession and daily routine.
-- For example:
-  - Teachers → often face mental fatigue or stress from students → suggest relaxation or mindfulness.
-  - IT workers → long screen exposure → suggest eye care or posture-related tips.
-  - Physical workers → body strain → suggest stretching or hydration.
-- Use the freetime input from user and also consider **general timing cues** such as:
-  - "Morning (before office)"
-  - "During travel"
-  - "Evening (after office)"
-- Include at least any one below tips:
-  - hydration tip (e.g., drink water regularly)
-  - relaxation or breathing tip
-  - hobby or mood-related suggestion
-  - tip for physical or eye wellness
-  - tip for healthy routine or mindset
+- **Use calendar data** to suggest activities that fit into their free time blocks
+- **Use location data** to understand their daily routine and movement patterns
+- **Consider morning/evening emotions** from push notifications to gauge mood patterns
+- Focus on **practical, actionable activities** tailored to:
+  - Their profession and daily routine
+  - Available free time (from calendar)
+  - Current emotional state (from notifications and inputs)
+  - Their actual location patterns (commute, office time, gym visits)
+- Timing suggestions should reference:
+  - Actual free blocks from calendar (if available)
+  - Commute time (suggest activities during travel)
+  - Office hours (desk exercises, lunch break activities)
+  - Post-work time based on when they leave office
+  - Home activities based on return time
+- Include diverse activities:
+  - Physical wellness (exercise, stretching, hydration)
+  - Mental wellness (relaxation, breathing, mindfulness)
+  - Hobby or creative activity
+  - Social connection or self-care
+  - Healthy routine or nutrition tip
+
+IMPORTANT: 
+- If calendar shows a busy day, suggest quick 5-10 minute activities
+- If calendar shows free time, suggest longer activities (30-60 min)
+- If commute is long, suggest audio books, podcasts, or breathing exercises
+- If they returned home late, suggest light evening relaxation
+- If they haven't been to gym, gently encourage physical activity
+- If low outdoor time, suggest fresh air activities
+- Match activity intensity to user's emotional state AND energy from location data
 
 FORMAT: Output ONLY the mood, stress level, and numbered list, nothing else.
 
@@ -403,11 +500,11 @@ Mood: [Sad/Neutral/Angry/Happy/Fear/Surprise/Disgust], stress_level: [0-5]
         
         print("-" * 70)
         
-        # Fetch user data from database
-        habit_data, combined_report, current_stress_day = self.fetch_user_data(user_id)
+        # Fetch user data from database (including notifications and calendar)
+        habit_data, combined_report, current_stress_day, extended_data = self.fetch_user_data(user_id)
         
         # Construct prompt with all available data
-        prompt = self.construct_prompt(preprocessed_data, habit_data, combined_report)
+        prompt = self.construct_prompt(preprocessed_data, habit_data, combined_report, extended_data)
         
         # Generate recommendations
         recommendations = self.generate_recommendations(prompt)
