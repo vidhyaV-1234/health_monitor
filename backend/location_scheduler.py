@@ -115,13 +115,13 @@ def analyze_locations_for_all_users():
 def run_scheduler():
     """Run the scheduler"""
     logger.info("📍 Location Data Scheduler Started")
-    logger.info("Analyzing location data daily at 7:00 AM")
+    logger.info("Analyzing location data daily at 3:45 PM (for testing)")
     
-    # Schedule daily analysis at 7:00 AM
-    schedule.every().day.at("07:00").do(analyze_locations_for_all_users)
+    # Schedule daily analysis at 3:45 PM
+    schedule.every().day.at("15:45").do(analyze_locations_for_all_users)
     
     logger.info("Scheduled time:")
-    logger.info("  - 7:00 AM")
+    logger.info("  - 3:45 PM (15:45)")
     logger.info("\nWaiting for scheduled time...")
     logger.info("(Current time: " + datetime.now().strftime("%Y-%m-%d %H:%M:%S") + ")\n")
     
@@ -136,7 +136,7 @@ if __name__ == "__main__":
     print("="*70)
     print("\nOptions:")
     print("1. Run one-time analysis (analyze now for all users)")
-    print("2. Run continuous scheduler (daily at 7:00 AM)")
+    print("2. Run continuous scheduler (daily at 3:45 PM)")
     print("="*70)
     
     choice = input("\nEnter choice (1 or 2): ").strip()
@@ -146,7 +146,7 @@ if __name__ == "__main__":
         analyze_locations_for_all_users()
     elif choice == "2":
         print("\nStarting continuous scheduler...")
-        print("Location data will be analyzed daily at 7:00 AM")
+        print("Location data will be analyzed daily at 3:45 PM")
         print("Press Ctrl+C to stop\n")
         try:
             run_scheduler()

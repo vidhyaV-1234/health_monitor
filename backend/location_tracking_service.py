@@ -8,6 +8,8 @@ from datetime import datetime, time as dt_time, timedelta
 from typing import Dict, List, Optional, Tuple
 import json
 from math import radians, cos, sin, asin, sqrt
+import requests
+import time
 
 from supabase import Client
 
@@ -162,7 +164,7 @@ class LocationTrackingService:
             return False
     
     def detect_location_type(self, user_id: str, lat: float, lon: float) -> Tuple[str, str]:
-        """Detect location type based on saved locations"""
+        """Detect location type based on saved locations, with fallback to reverse geocoding"""
         try:
             # Get saved locations for user
             result = self.supabase.table("saved_locations")\
@@ -171,7 +173,9 @@ class LocationTrackingService:
                 .execute()
             
             if not result.data:
-                return 'other', 'Unknown Location'
+                # No saved locations, use reverse geocoding to get address
+                address = self.reverse_geocode(lat, lon)
+                return 'other', address or 'Unknown Location'
             
             # Check if current location is near any saved location
             for saved_loc in result.data:
@@ -194,11 +198,63 @@ class LocationTrackingService:
                     
                     return saved_loc['location_type'], saved_loc.get('location_name', saved_loc['location_type'].title())
             
-            return 'other', 'Unknown Location'
+            # Not near any saved location, use reverse geocoding
+            address = self.reverse_geocode(lat, lon)
+            return 'other', address or 'Unknown Location'
             
         except Exception as e:
             print(f"Error detecting location type: {str(e)}")
             return 'other', 'Unknown Location'
+    
+    def reverse_geocode(self, lat: float, lon: float) -> Optional[str]:
+        """
+        Get address from coordinates using OpenStreetMap Nominatim API (free)
+        Note: Nominatim has a usage policy of max 1 request per second
+        """
+        try:
+            url = f"https://nominatim.openstreetmap.org/reverse"
+            params = {
+                'format': 'json',
+                'lat': lat,
+                'lon': lon,
+                'addressdetails': 1
+            }
+            headers = {
+                'User-Agent': 'WellnessCoachApp/1.0'  # Required by Nominatim
+            }
+            
+            response = requests.get(url, params=params, headers=headers, timeout=5)
+            
+            if response.status_code == 200:
+                data = response.json()
+                
+                if data.get('address'):
+                    addr = data['address']
+                    # Build readable address
+                    parts = []
+                    if addr.get('road'):
+                        parts.append(addr['road'])
+                    if addr.get('suburb'):
+                        parts.append(addr['suburb'])
+                    if addr.get('city') or addr.get('town'):
+                        parts.append(addr.get('city') or addr.get('town'))
+                    if addr.get('state'):
+                        parts.append(addr['state'])
+                    
+                    if parts:
+                        address = ', '.join(parts)
+                        print(f"📍 Reverse geocoded: {address}")
+                        return address
+                
+                # Fallback to display_name
+                if data.get('display_name'):
+                    return data['display_name']
+            
+            return None
+            
+        except Exception as e:
+            print(f"⚠️ Reverse geocoding failed: {str(e)}")
+            return None
     
     def save_frequent_location(self, user_id: str, location_type: str,
                                latitude: float, longitude: float,

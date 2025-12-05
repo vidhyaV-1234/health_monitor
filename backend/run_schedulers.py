@@ -6,8 +6,8 @@ Usage:
   python run_schedulers.py
 
 This will run both schedulers in the same process:
-- Calendar data fetch: 6 AM + 7 AM
-- Location data analysis: 7 AM
+- Calendar data fetch: 3:45 PM (15:45)
+- Location data analysis: 3:45 PM (15:45)
 """
 import os
 import time
@@ -194,25 +194,24 @@ def run_all_schedulers():
     logger.info("COMBINED SCHEDULER STARTED")
     logger.info("="*70)
     logger.info("Scheduled tasks:")
-    logger.info("  📅 Calendar fetch: 6:00 AM + 7:00 AM")
-    logger.info("  📍 Location analysis: 7:00 AM")
+    logger.info("  📅 Calendar fetch: 3:45 PM (15:45)")
+    logger.info("  📍 Location analysis: 3:45 PM (15:45)")
     logger.info("="*70)
     logger.info(f"Current time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
     
-    # Schedule calendar fetches
-    schedule.every().day.at("06:00").do(fetch_calendar_for_all_users)
-    schedule.every().day.at("07:00").do(fetch_calendar_for_all_users)
+    # Schedule calendar fetches at 3:45 PM
+    schedule.every().day.at("15:45").do(fetch_calendar_for_all_users)
     
-    # Schedule location analysis
-    schedule.every().day.at("07:00").do(analyze_locations_for_all_users)
+    # Schedule location analysis at 3:45 PM
+    schedule.every().day.at("15:45").do(analyze_locations_for_all_users)
     
     # Run immediately for testing (if current time is close to scheduled time)
     current_hour = datetime.now().hour
     current_minute = datetime.now().minute
     
-    # If it's close to 7:00 AM (within 5 minutes), run immediately
-    if current_hour == 7 and current_minute <= 5:
-        logger.info("⏰ Current time is close to 7:00 AM, running tasks immediately...\n")
+    # If it's close to 3:45 PM (within 5 minutes), run immediately
+    if current_hour == 15 and 40 <= current_minute <= 50:
+        logger.info("⏰ Current time is close to 3:45 PM, running tasks immediately...\n")
         fetch_calendar_for_all_users()
         analyze_locations_for_all_users()
     
@@ -269,10 +268,10 @@ if __name__ == "__main__":
     elif choice == "2":
         print("\nStarting continuous scheduler...")
         print("Tasks will run at:")
-        print("  - Calendar: 6:00 AM + 7:00 AM")
-        print("  - Location: 7:00 AM")
-        print("\n⚠️  IMPORTANT: The scheduler must be running at 6:00 AM and 7:00 AM for tasks to execute!")
-        print("   If you start it after 7:00 AM, tasks will run tomorrow at 6:00 AM and 7:00 AM.")
+        print("  - Calendar: 3:45 PM (15:45)")
+        print("  - Location: 3:45 PM (15:45)")
+        print("\n⚠️  IMPORTANT: The scheduler must be running at 3:45 PM for tasks to execute!")
+        print("   If you start it after 3:45 PM, tasks will run tomorrow at 3:45 PM.")
         print("\nPress Ctrl+C to stop\n")
         try:
             run_all_schedulers()
@@ -289,8 +288,8 @@ if __name__ == "__main__":
         print("STARTING CONTINUOUS SCHEDULER")
         print("="*70)
         print("\nTasks will run at:")
-        print("  - Calendar: 6:00 AM + 7:00 AM")
-        print("  - Location: 7:00 AM")
+        print("  - Calendar: 3:45 PM (15:45)")
+        print("  - Location: 3:45 PM (15:45)")
         print("\nPress Ctrl+C to stop\n")
         try:
             run_all_schedulers()
