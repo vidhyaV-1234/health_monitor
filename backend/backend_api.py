@@ -24,11 +24,13 @@ import tempfile
 # Try multiple locations to ensure we find it
 from pathlib import Path
 backend_dir = Path(__file__).parent if '__file__' in dir() else Path.cwd()
+
+# Ensure all entries are pathlib.Path objects (strings don't have .exists())
 env_paths = [
-    backend_dir / ".env",  # backend/.env
-    backend_dir.parent / ".env",  # health_monitor/.env
-    backend_dir.parent.parent / ".env",  # project/.env
-    ".env",  # Current directory
+    backend_dir / ".env",              # backend/.env
+    backend_dir.parent / ".env",       # health_monitor/.env
+    backend_dir.parent.parent / ".env",# project/.env
+    Path(".env"),                      # Current working directory
 ]
 
 env_loaded = False
