@@ -50,19 +50,25 @@ class PushNotificationService:
     def register_device(self, user_id: str, fcm_token: str) -> bool:
         """Register a user's device token for push notifications"""
         try:
+            # Convert user_id to int if it's a string
+            user_id_int = int(user_id) if not isinstance(user_id, int) else user_id
+            
+            # Use upsert with on_conflict to handle both insert and update atomically
             self.supabase.table("push_notification_settings")\
                 .upsert({
-                    "id": user_id,
+                    "id": user_id_int,
                     "fcm_token": fcm_token,
                     "notifications_enabled": True
-                })\
+                }, on_conflict="id")\
                 .execute()
             
-            print(f"Device registered for user {user_id}")
+            print(f"✅ Device registered/updated for user {user_id_int}")
             return True
             
         except Exception as e:
-            print(f"Error registering device: {str(e)}")
+            print(f"❌ Error registering device: {str(e)}")
+            import traceback
+            traceback.print_exc()
             return False
     
     def send_morning_notification(self, user_id: str) -> Optional[str]:
