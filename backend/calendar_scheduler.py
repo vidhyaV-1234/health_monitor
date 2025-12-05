@@ -110,10 +110,10 @@ def fetch_calendar_for_all_users():
 def run_scheduler():
     """Run the scheduler"""
     logger.info("📅 Calendar Data Scheduler Started")
-    logger.info("Fetching calendar data daily at 3:45 PM (for testing)")
+    logger.info("Fetching calendar data daily at 7:00 PM (19:00)")
     
-    # Schedule daily fetch at 3:45 PM
-    schedule.every().day.at("15:45").do(fetch_calendar_for_all_users)
+    # Schedule daily fetch at 7:00 PM
+    schedule.every().day.at("19:00").do(fetch_calendar_for_all_users)
     
     logger.info("Scheduled time:")
     logger.info("  - 3:45 PM (15:45)")

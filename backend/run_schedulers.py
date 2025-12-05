@@ -1,13 +1,15 @@
 """
 Combined Scheduler Runner
-Runs both calendar and location schedulers together
+Runs calendar, location, and mood notification schedulers together
 
 Usage:
   python run_schedulers.py
 
-This will run both schedulers in the same process:
+This will run all schedulers in the same process:
 - Calendar data fetch: 3:45 PM (15:45)
 - Location data analysis: 3:45 PM (15:45)
+- Morning mood notifications: 5:35 PM (17:35) - for testing
+- Evening mood notifications: 5:35 PM (17:35) - for testing
 """
 import os
 import time
@@ -18,6 +20,7 @@ from dotenv import load_dotenv
 from supabase import create_client
 from google_calendar_service import GoogleCalendarService
 from location_tracking_service import LocationTrackingService
+from push_notification_service import PushNotificationService
 
 # Load environment variables
 load_dotenv()
@@ -43,6 +46,7 @@ if not SUPABASE_URL or not SUPABASE_KEY:
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 calendar_service = GoogleCalendarService(supabase)
 location_service = LocationTrackingService(supabase)
+notification_service = PushNotificationService(supabase)
 
 def fetch_calendar_for_all_users():
     """Fetch today's calendar data for all users with authorized calendar access"""
@@ -188,32 +192,102 @@ def analyze_locations_for_all_users():
         import traceback
         traceback.print_exc()
 
+def send_mood_notifications():
+    """Send mood check notifications to all users"""
+    logger.info("="*70)
+    logger.info("RUNNING SCHEDULED MOOD NOTIFICATIONS")
+    logger.info("="*70)
+    
+    try:
+        # Get all users with notifications enabled
+        result = supabase.table("push_notification_settings")\
+            .select("id, fcm_token")\
+            .eq("notifications_enabled", True)\
+            .not_.is_("fcm_token", "null")\
+            .execute()
+        
+        if not result.data:
+            logger.info("No users with notifications enabled")
+            logger.info("="*70 + "\n")
+            return
+        
+        total_users = len(result.data)
+        sent_count = 0
+        failed_count = 0
+        
+        logger.info(f"Found {total_users} user(s) with notifications enabled")
+        logger.info("Sending mood notifications...\n")
+        
+        for user_record in result.data:
+            user_id = str(user_record.get("id"))
+            if not user_id:
+                continue
+            
+            try:
+                # Determine if morning or evening based on hour
+                current_hour = datetime.now().hour
+                if current_hour < 12:
+                    logger.info(f"☀️ Sending morning notification to user {user_id}...")
+                    response = notification_service.send_morning_notification(user_id)
+                else:
+                    logger.info(f"🌙 Sending evening notification to user {user_id}...")
+                    response = notification_service.send_evening_notification(user_id)
+                
+                if response:
+                    logger.info(f"✅ Notification sent to user {user_id}")
+                    sent_count += 1
+                else:
+                    logger.warning(f"⚠️ Failed to send to user {user_id}")
+                    failed_count += 1
+                    
+            except Exception as user_error:
+                logger.error(f"❌ Error sending to user {user_id}: {str(user_error)}")
+                failed_count += 1
+        
+        logger.info("\n" + "="*70)
+        logger.info("MOOD NOTIFICATIONS SUMMARY:")
+        logger.info(f"  Total users: {total_users}")
+        logger.info(f"  Sent: {sent_count}")
+        logger.info(f"  Failed: {failed_count}")
+        logger.info("="*70 + "\n")
+        
+    except Exception as e:
+        logger.error(f"❌ Error during mood notifications: {str(e)}")
+        import traceback
+        traceback.print_exc()
+
 def run_all_schedulers():
-    """Run both calendar and location schedulers"""
+    """Run calendar, location, and mood notification schedulers"""
     logger.info("="*70)
     logger.info("COMBINED SCHEDULER STARTED")
     logger.info("="*70)
     logger.info("Scheduled tasks:")
-    logger.info("  📅 Calendar fetch: 3:45 PM (15:45)")
-    logger.info("  📍 Location analysis: 3:45 PM (15:45)")
+    logger.info("  📅 Calendar fetch & backup: 7:00 PM (19:00)")
+    logger.info("  📍 Location analysis & summary: 7:00 PM (19:00)")
+    logger.info("  🔔 Mood notifications: 7:00 PM (19:00)")
     logger.info("="*70)
     logger.info(f"Current time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
     
-    # Schedule calendar fetches at 3:45 PM
-    schedule.every().day.at("15:45").do(fetch_calendar_for_all_users)
-    
-    # Schedule location analysis at 3:45 PM
-    schedule.every().day.at("15:45").do(analyze_locations_for_all_users)
+    # Schedule ALL tasks at 7:00 PM
+    schedule.every().day.at("19:00").do(fetch_calendar_for_all_users)
+    schedule.every().day.at("19:00").do(analyze_locations_for_all_users)
+    schedule.every().day.at("19:00").do(send_mood_notifications)
     
     # Run immediately for testing (if current time is close to scheduled time)
     current_hour = datetime.now().hour
     current_minute = datetime.now().minute
     
-    # If it's close to 3:45 PM (within 5 minutes), run immediately
-    if current_hour == 15 and 40 <= current_minute <= 50:
-        logger.info("⏰ Current time is close to 3:45 PM, running tasks immediately...\n")
+    # If it's close to 7:00 PM (within 10 minutes), run all tasks immediately
+    if current_hour == 19 and 0 <= current_minute <= 10:
+        logger.info("⏰ Current time is close to 7:00 PM, running all tasks immediately...\n")
         fetch_calendar_for_all_users()
         analyze_locations_for_all_users()
+        send_mood_notifications()
+    elif current_hour == 18 and current_minute >= 50:
+        logger.info("⏰ Current time is close to 7:00 PM, running all tasks immediately...\n")
+        fetch_calendar_for_all_users()
+        analyze_locations_for_all_users()
+        send_mood_notifications()
     
     logger.info("Waiting for scheduled times...")
     logger.info("Press Ctrl+C to stop\n")
@@ -250,9 +324,9 @@ if __name__ == "__main__":
     print("COMBINED SCHEDULER")
     print("="*70)
     print("\nOptions:")
-    print("1. Run one-time tasks now (fetch calendar + analyze locations)")
+    print("1. Run one-time tasks now (calendar + location + notifications)")
     print("2. Run continuous scheduler (runs daily at scheduled times)")
-    print("3. Test: Run tasks now + start scheduler")
+    print("3. Test: Run all tasks now + start scheduler")
     print("="*70)
     
     import sys
@@ -265,13 +339,15 @@ if __name__ == "__main__":
         print("\nRunning one-time tasks...\n")
         fetch_calendar_for_all_users()
         analyze_locations_for_all_users()
+        send_mood_notifications()
     elif choice == "2":
         print("\nStarting continuous scheduler...")
-        print("Tasks will run at:")
-        print("  - Calendar: 3:45 PM (15:45)")
-        print("  - Location: 3:45 PM (15:45)")
-        print("\n⚠️  IMPORTANT: The scheduler must be running at 3:45 PM for tasks to execute!")
-        print("   If you start it after 3:45 PM, tasks will run tomorrow at 3:45 PM.")
+        print("All tasks will run at:")
+        print("  - Calendar fetch & backup: 7:00 PM (19:00)")
+        print("  - Location analysis & summary: 7:00 PM (19:00)")
+        print("  - Mood notifications: 7:00 PM (19:00)")
+        print("\n⚠️  IMPORTANT: The scheduler must be running at the scheduled times!")
+        print("   If you start it after the scheduled time, tasks will run tomorrow.")
         print("\nPress Ctrl+C to stop\n")
         try:
             run_all_schedulers()
@@ -284,12 +360,14 @@ if __name__ == "__main__":
         print("="*70)
         fetch_calendar_for_all_users()
         analyze_locations_for_all_users()
+        send_mood_notifications()
         print("\n" + "="*70)
         print("STARTING CONTINUOUS SCHEDULER")
         print("="*70)
-        print("\nTasks will run at:")
-        print("  - Calendar: 3:45 PM (15:45)")
-        print("  - Location: 3:45 PM (15:45)")
+        print("\nAll tasks will run at:")
+        print("  - Calendar fetch & backup: 7:00 PM (19:00)")
+        print("  - Location analysis & summary: 7:00 PM (19:00)")
+        print("  - Mood notifications: 7:00 PM (19:00)")
         print("\nPress Ctrl+C to stop\n")
         try:
             run_all_schedulers()
@@ -299,4 +377,5 @@ if __name__ == "__main__":
         print("\nInvalid choice. Running one-time tasks...\n")
         fetch_calendar_for_all_users()
         analyze_locations_for_all_users()
+        send_mood_notifications()
 

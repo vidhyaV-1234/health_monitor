@@ -115,10 +115,10 @@ def analyze_locations_for_all_users():
 def run_scheduler():
     """Run the scheduler"""
     logger.info("📍 Location Data Scheduler Started")
-    logger.info("Analyzing location data daily at 3:45 PM (for testing)")
+    logger.info("Analyzing location data daily at 7:00 PM (19:00)")
     
-    # Schedule daily analysis at 3:45 PM
-    schedule.every().day.at("15:45").do(analyze_locations_for_all_users)
+    # Schedule daily analysis at 7:00 PM
+    schedule.every().day.at("19:00").do(analyze_locations_for_all_users)
     
     logger.info("Scheduled time:")
     logger.info("  - 3:45 PM (15:45)")
