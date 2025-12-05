@@ -105,9 +105,22 @@ class ModelAnalyzer:
             notification_response = self.supabase.table('push_notification_responses').select('*').eq('id', user_id).order('timestamp', desc=True).limit(7).execute()
             notification_data = notification_response.data if notification_response.data else []
 
-            # Fetch latest calendar data
-            calendar_response = self.supabase.table('calendar_data').select('*').eq('id', user_id).order('date', desc=True).limit(1).execute()
-            calendar_data = calendar_response.data[0] if calendar_response.data else None
+            # Fetch latest calendar data (today and tomorrow)
+            # Get today's date and tomorrow's date
+            from datetime import date, timedelta
+            today = date.today()
+            tomorrow = today + timedelta(days=1)
+            
+            # Fetch today's calendar data
+            today_calendar_response = self.supabase.table('calendar_data').select('*').eq('id', user_id).eq('date', str(today)).limit(1).execute()
+            today_calendar_data = today_calendar_response.data[0] if today_calendar_response.data else None
+            
+            # Fetch tomorrow's calendar data
+            tomorrow_calendar_response = self.supabase.table('calendar_data').select('*').eq('id', user_id).eq('date', str(tomorrow)).limit(1).execute()
+            tomorrow_calendar_data = tomorrow_calendar_response.data[0] if tomorrow_calendar_response.data else None
+            
+            # For backward compatibility, use today's data as primary
+            calendar_data = today_calendar_data
 
             # Fetch latest location summary
             location_response = self.supabase.table('daily_location_summary').select('*').eq('id', user_id).order('date', desc=True).limit(1).execute()
@@ -123,13 +136,16 @@ class ModelAnalyzer:
             print(f"  → Morning emotion: {morning_emotion}")
             print(f"  → Evening emotion (previous): {evening_emotion}")
             print(f"  → Notification responses: {len(notification_data)}")
-            print(f"  → Calendar data: {'Yes' if calendar_data else 'No'}")
+            print(f"  → Calendar data (today): {'Yes' if today_calendar_data else 'No'}")
+            print(f"  → Calendar data (tomorrow): {'Yes' if tomorrow_calendar_data else 'No'}")
             print(f"  → Location data: {'Yes' if location_data else 'No'}")
             
             # Combine notification, calendar, and location data
             extended_data = {
                 'notification_data': notification_data,
-                'calendar_data': calendar_data,
+                'calendar_data': calendar_data,  # Today's data (for backward compatibility)
+                'today_calendar_data': today_calendar_data,
+                'tomorrow_calendar_data': tomorrow_calendar_data,
                 'location_data': location_data,
                 'morning_emotion': morning_emotion,
                 'evening_emotion': evening_emotion
@@ -297,18 +313,36 @@ class ModelAnalyzer:
         if extended_data and extended_data.get('evening_emotion'):
             notification_context += f"\nLast evening's emotion: {extended_data['evening_emotion']}"
         
-        # Add calendar context
+        # Add calendar context (today and tomorrow)
         calendar_context = ""
-        if extended_data and extended_data.get('calendar_data'):
-            cal = extended_data['calendar_data']
-            calendar_context = f"""
+        today_cal = extended_data.get('today_calendar_data') if extended_data else None
+        tomorrow_cal = extended_data.get('tomorrow_calendar_data') if extended_data else None
+        
+        if today_cal or tomorrow_cal:
+            calendar_context = ""
+            
+            if today_cal:
+                calendar_context += f"""
 CALENDAR DATA (Today's Schedule):
-- {cal.get('meeting_count', 0)} meetings scheduled
-- Total meeting hours: {cal.get('meeting_hours', 0)}
-- Free time blocks: {cal.get('free_blocks', 0)}
-- Lunch break: {'Yes' if cal.get('has_lunch_break') else 'No'}
-- Events summary: {cal.get('events_summary', 'None')}
+- {today_cal.get('meeting_count', 0)} meetings scheduled
+- Total meeting hours: {today_cal.get('meeting_hours', 0)}
+- Free time blocks: {today_cal.get('free_blocks', 0)}
+- Lunch break: {'Yes' if today_cal.get('has_lunch_break') else 'No'}
+- Events summary: {today_cal.get('events_summary', 'None')}
 """
+            
+            if tomorrow_cal:
+                calendar_context += f"""
+CALENDAR DATA (Tomorrow's Schedule):
+- {tomorrow_cal.get('meeting_count', 0)} meetings scheduled
+- Total meeting hours: {tomorrow_cal.get('meeting_hours', 0)}
+- Free time blocks: {tomorrow_cal.get('free_blocks', 0)}
+- Lunch break: {'Yes' if tomorrow_cal.get('has_lunch_break') else 'No'}
+- Events summary: {tomorrow_cal.get('events_summary', 'None')}
+"""
+            
+            if not today_cal and not tomorrow_cal:
+                calendar_context = "\nCALENDAR DATA: No calendar data available\n"
         
         # Add location context
         location_context = ""
@@ -340,19 +374,22 @@ CURRENT STATE: {current_context}{notification_context}
 
 {location_context}
 
-TASK: Based on the user's current emotional state, schedule, location patterns, and lifestyle, recommend exactly 5 personalized health and wellness activities for TODAY.
+TASK: Based on the user's current emotional state, TODAY's schedule, TOMORROW's schedule, location patterns, and lifestyle, recommend exactly 5 personalized health and wellness activities for TODAY.
 
 Guidelines:
-- **Use calendar data** to suggest activities that fit into their free time blocks
+- **Use TODAY's calendar data** to suggest activities that fit into their free time blocks today
+- **Use TOMORROW's calendar data** to prepare them for tomorrow's busy schedule - if tomorrow is busy, suggest stress-reducing activities today
 - **Use location data** to understand their daily routine and movement patterns
-- **Consider morning/evening emotions** from push notifications to gauge mood patterns
+- **Use morning/evening emotions** from push notifications to gauge mood patterns
 - Focus on **practical, actionable activities** tailored to:
   - Their profession and daily routine
-  - Available free time (from calendar)
+  - Available free time TODAY (from calendar)
+  - TOMORROW's schedule (if busy tomorrow, suggest relaxation/preparation activities today)
   - Current emotional state (from notifications and inputs)
   - Their actual location patterns (commute, office time, gym visits)
 - Timing suggestions should reference:
-  - Actual free blocks from calendar (if available)
+  - Actual free blocks from TODAY's calendar (if available)
+  - TOMORROW's schedule (if busy, suggest preparation activities)
   - Commute time (suggest activities during travel)
   - Office hours (desk exercises, lunch break activities)
   - Post-work time based on when they leave office
@@ -365,13 +402,15 @@ Guidelines:
   - Healthy routine or nutrition tip
 
 IMPORTANT: 
-- If calendar shows a busy day, suggest quick 5-10 minute activities
-- If calendar shows free time, suggest longer activities (30-60 min)
+- If TODAY's calendar shows a busy day, suggest quick 5-10 minute activities
+- If TODAY's calendar shows free time, suggest longer activities (30-60 min)
+- **If TOMORROW's calendar shows a busy schedule, suggest stress-reducing and preparation activities TODAY** (e.g., early sleep, relaxation, meal prep)
+- **If TOMORROW has many meetings, suggest activities today that help prepare for a busy day** (e.g., good sleep, hydration, light exercise)
 - If commute is long, suggest audio books, podcasts, or breathing exercises
 - If they returned home late, suggest light evening relaxation
 - If they haven't been to gym, gently encourage physical activity
 - If low outdoor time, suggest fresh air activities
-- Match activity intensity to user's emotional state AND energy from location data
+- Match activity intensity to user's emotional state AND energy from location data AND tomorrow's schedule
 
 FORMAT: Output ONLY the mood, stress level, and numbered list, nothing else.
 

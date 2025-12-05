@@ -16,6 +16,7 @@ supabase==2.4.2
 numpy>=1.24.0
 requests>=2.31.0
 boto3>=1.28.0
+schedule>=1.2.0  # For scheduled tasks (calendar fetch, notifications)
 
 # Ultra-lightweight models for audio/image processing
 # Optimized for Render free tier (512MB RAM limit)

@@ -6,7 +6,7 @@ Serves HTML/JS frontend and provides API endpoints for AI analysis via AWS Bedro
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Depends, Header, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, HTMLResponse
 import uvicorn
 import os
 from pathlib import Path
@@ -21,7 +21,40 @@ import tempfile
 
 
 # Load environment variables from .env file
-load_dotenv()
+# Try multiple locations to ensure we find it
+from pathlib import Path
+backend_dir = Path(__file__).parent if '__file__' in dir() else Path.cwd()
+env_paths = [
+    backend_dir / ".env",  # backend/.env
+    backend_dir.parent / ".env",  # health_monitor/.env
+    backend_dir.parent.parent / ".env",  # project/.env
+    ".env",  # Current directory
+]
+
+env_loaded = False
+for env_path in env_paths:
+    if env_path.exists():
+        load_dotenv(env_path)
+        print(f"✓ Loaded .env from: {env_path.absolute()}")
+        env_loaded = True
+        break
+
+if not env_loaded:
+    # Fallback to default load_dotenv()
+    load_dotenv()
+    print("⚠️ Using default load_dotenv() - .env file may not be found")
+
+# Debug: Check if Google credentials are loaded
+import os
+google_client_id = os.getenv("GOOGLE_CLIENT_ID")
+google_client_secret = os.getenv("GOOGLE_CLIENT_SECRET")
+if google_client_id and google_client_secret:
+    print(f"✓ Google credentials found in environment")
+    print(f"  Client ID: {google_client_id[:30]}...")
+else:
+    print(f"⚠️ Google credentials NOT found in environment")
+    print(f"  GOOGLE_CLIENT_ID: {'SET' if google_client_id else 'NOT SET'}")
+    print(f"  GOOGLE_CLIENT_SECRET: {'SET' if google_client_secret else 'NOT SET'}")
 
 # Import local modules
 try:
@@ -297,9 +330,9 @@ async def login(credentials: UserLogin):
         logger.error(f"Login error: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Login failed: {str(e)}")
 
-# Update the verify_token function to decode JWT properly
+# Single verify_token function - properly decodes JWT
 def verify_token(authorization: Optional[str] = Header(None)) -> dict:
-    """Verify JWT token from header"""
+    """Verify JWT token from header and return user_id"""
     if not authorization:
         raise HTTPException(status_code=401, detail="Missing authorization header")
     
@@ -309,22 +342,24 @@ def verify_token(authorization: Optional[str] = Header(None)) -> dict:
         if scheme.lower() != "bearer":
             raise HTTPException(status_code=401, detail="Invalid authorization scheme")
         
-        # Decode JWT token
+        # Decode JWT token - token contains {"sub": user_id, "exp": ...}
         payload = pyjwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        email = payload.get("sub")
+        user_id = payload.get("sub")  # "sub" contains the user_id (see create_access_token)
         
-        if not email:
-            raise HTTPException(status_code=401, detail="Invalid token")
+        if not user_id:
+            raise HTTPException(status_code=401, detail="Invalid token: missing user_id")
         
-        return {"user_id": email, "token": token}
+        # Return both user_id and id for compatibility
+        return {"user_id": str(user_id), "id": str(user_id), "token": token}
         
     except pyjwt.ExpiredSignatureError:
         raise HTTPException(status_code=401, detail="Token has expired")
-    except pyjwt.InvalidTokenError:
+    except pyjwt.InvalidTokenError as e:
+        logger.error(f"Invalid token: {str(e)}")
         raise HTTPException(status_code=401, detail="Invalid token")
     except Exception as e:
         logger.error(f"Token verification failed: {str(e)}")
-        raise HTTPException(status_code=401, detail="Invalid token")
+        raise HTTPException(status_code=401, detail=f"Token verification failed: {str(e)}")
 
 @app.get("/api/auth/me")
 async def get_current_user(user_id_obj: dict = Depends(verify_token)):
@@ -361,34 +396,6 @@ async def get_current_user(user_id_obj: dict = Depends(verify_token)):
         logger.error(f"Error getting user info: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error getting user info: {str(e)}")
 
-# Update the verify_token function to decode JWT properly
-def verify_token(authorization: Optional[str] = Header(None)) -> dict:
-    """Verify JWT token from header"""
-    if not authorization:
-        raise HTTPException(status_code=401, detail="Missing authorization header")
-    
-    try:
-        # Extract token from "Bearer <token>"
-        scheme, token = authorization.split()
-        if scheme.lower() != "bearer":
-            raise HTTPException(status_code=401, detail="Invalid authorization scheme")
-        
-        # Decode JWT token
-        payload = pyjwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        email = payload.get("sub")
-        
-        if not email:
-            raise HTTPException(status_code=401, detail="Invalid token")
-        
-        return {"user_id": email, "token": token}
-        
-    except pyjwt.ExpiredSignatureError:
-        raise HTTPException(status_code=401, detail="Token has expired")
-    except pyjwt.InvalidTokenError:
-        raise HTTPException(status_code=401, detail="Invalid token")
-    except Exception as e:
-        logger.error(f"Token verification failed: {str(e)}")
-        raise HTTPException(status_code=401, detail="Invalid token")
 # Initialize on startup - LAZY LOADING for memory optimization
 @app.on_event("startup")
 async def startup_event():
@@ -407,7 +414,14 @@ async def startup_event():
         # Initialize calendar and notification services
         if GoogleCalendarService:
             calendar_service = GoogleCalendarService(supabase)
-            logger.info("✓ Google Calendar Service initialized")
+            if calendar_service.client_id and calendar_service.client_secret:
+                logger.info("✓ Google Calendar Service initialized with OAuth credentials")
+                logger.info(f"  Client ID: {calendar_service.client_id[:30]}...")
+                logger.info(f"  Redirect URI: {calendar_service.redirect_uri}")
+            else:
+                logger.warning("⚠️ Google Calendar Service initialized WITHOUT OAuth credentials")
+                logger.warning("   Set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET in .env file")
+                logger.warning("   Or place client_secret.json in project root")
         
         if PushNotificationService:
             notification_service = PushNotificationService(supabase)
@@ -420,24 +434,6 @@ async def startup_event():
     except Exception as e:
         logger.warning(f"Initialization failed: {str(e)}")
         analyzer = None
-
-def verify_token(authorization: Optional[str] = Header(None)) -> dict:
-    """Verify JWT token from header"""
-    if not authorization:
-        raise HTTPException(status_code=401, detail="Missing authorization header")
-    
-    try:
-        # Extract token from "Bearer <token>"
-        scheme, token = authorization.split()
-        if scheme.lower() != "bearer":
-            raise HTTPException(status_code=401, detail="Invalid authorization scheme")
-        
-        # Verify with Supabase (simplified - in production use proper JWT verification)
-        # For now, we'll treat the token as user_id
-        return {"user_id": token, "token": token}
-    except Exception as e:
-        logger.error(f"Token verification failed: {str(e)}")
-        raise HTTPException(status_code=401, detail="Invalid token")
 
 # ============================================
 # STATIC FILES - SERVE HTML/JS FRONTEND
@@ -847,6 +843,33 @@ async def submit_mood(
                 image_path = TEMP_DIR / f"image_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{mood_image.filename}"
                 with open(image_path, "wb") as f:
                     f.write(await mood_image.read())
+            
+            # 📍 AUTO-GENERATE DAILY LOCATION SUMMARY (if location tracking is enabled)
+            if location_service:
+                try:
+                    logger.info(f"📍 Auto-analyzing today's location data for user {user_id}")
+                    today_summary = location_service.analyze_daily_locations(user_id)
+                    if today_summary:
+                        location_service.save_daily_summary(user_id, today_summary)
+                        logger.info(f"✅ Daily location summary saved automatically")
+                    else:
+                        logger.info("ℹ️  No location data to summarize yet")
+                except Exception as loc_err:
+                    logger.warning(f"⚠️ Location summary generation failed: {str(loc_err)}")
+            
+            # 📅 AUTO-FETCH TODAY'S AND TOMORROW'S CALENDAR DATA (if calendar is authorized)
+            if calendar_service:
+                try:
+                    logger.info(f"📅 Auto-fetching today's and tomorrow's calendar data for user {user_id}")
+                    calendar_data = calendar_service.fetch_today_events(user_id)
+                    if calendar_data:
+                        logger.info(f"✅ Calendar data fetched and saved automatically")
+                        logger.info(f"   Today - Meeting count: {calendar_data.get('meeting_count', 0)}, Hours: {calendar_data.get('meeting_hours', 0)}")
+                        logger.info(f"   Tomorrow - Meeting count: {calendar_data.get('tomorrow_meeting_count', 0)}, Hours: {calendar_data.get('tomorrow_meeting_hours', 0)}")
+                    else:
+                        logger.info("ℹ️  No calendar data available (not authorized or no events)")
+                except Exception as cal_err:
+                    logger.warning(f"⚠️ Calendar fetch failed: {str(cal_err)}")
             
             # Process with ML
             if preprocessor and analyzer:
@@ -1308,27 +1331,212 @@ async def toggle_notifications(
 # GOOGLE CALENDAR ENDPOINTS
 # ============================================
 
+@app.get("/api/calendar/status")
+async def calendar_service_status():
+    """Check Google Calendar service status (for debugging)"""
+    try:
+        status = {
+            "service_exists": calendar_service is not None,
+            "client_id_set": calendar_service.client_id is not None if calendar_service else False,
+            "client_secret_set": calendar_service.client_secret is not None if calendar_service else False,
+            "redirect_uri": calendar_service.redirect_uri if calendar_service else None,
+        }
+        
+        if calendar_service:
+            status["client_id_preview"] = calendar_service.client_id[:30] + "..." if calendar_service.client_id else None
+        
+        return JSONResponse(status)
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
+
 @app.get("/api/calendar/authorize/{user_id}")
 async def authorize_calendar(
     user_id: str,
     user_id_obj: dict = Depends(verify_token)
 ):
-    """Start Google Calendar authorization flow"""
+    """
+    Start Google Calendar authorization flow.
+    
+    This endpoint generates a Google OAuth URL for the user to authorize calendar access.
+    
+    How it works:
+    1. User clicks "Connect Calendar" in frontend
+    2. Frontend calls this endpoint: GET /api/calendar/authorize/{user_id}
+    3. Backend generates OAuth URL with unique 'state' parameter
+    4. Frontend opens URL in popup window
+    5. User authorizes on Google's website
+    6. Google redirects to /auth/callback with authorization code
+    7. Backend exchanges code for tokens and saves them
+    
+    Note: The URL is generated fresh each time because Google creates a unique
+    'state' parameter for security. The base URL is the same for all users.
+    """
     try:
         if not calendar_service:
-            raise HTTPException(status_code=503, detail="Calendar service not available")
+            logger.error("❌ Calendar service is None - service not initialized")
+            raise HTTPException(status_code=503, detail="Calendar service not available. Please restart the backend server.")
         
-        # This would redirect to Google OAuth flow
-        # For now, return authorization URL structure
+        # Check if service has credentials before generating URL
+        if not calendar_service.client_id or not calendar_service.client_secret:
+            logger.error(f"❌ Calendar service missing credentials!")
+            logger.error(f"   calendar_service exists: {calendar_service is not None}")
+            logger.error(f"   client_id: {'SET (' + calendar_service.client_id[:30] + '...)' if calendar_service.client_id else 'NOT SET'}")
+            logger.error(f"   client_secret: {'SET' if calendar_service.client_secret else 'NOT SET'}")
+            logger.error(f"   Check .env file and restart backend server!")
+            raise HTTPException(
+                status_code=503, 
+                detail="Google Calendar OAuth not configured. Please set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET in backend/.env file and restart the backend server."
+            )
+        
+        # Convert user_id to int (database stores id as BIGINT)
+        try:
+            user_id_int = int(user_id)
+        except ValueError:
+            logger.error(f"Invalid user_id format: {user_id}")
+            raise HTTPException(status_code=400, detail=f"Invalid user ID format: {user_id}")
+        
+        # Generate authorization URL with unique state for this user
+        # This is standard OAuth 2.0 - Google handles the authorization flow
+        auth_url = calendar_service.get_authorization_url(user_id_int)
+        
+        if not auth_url:
+            logger.error(f"❌ Failed to generate authorization URL for user {user_id}")
+            raise HTTPException(
+                status_code=503, 
+                detail="Failed to generate Google Calendar authorization URL. Check backend logs for details."
+            )
+        
+        logger.info(f"✓ Generated OAuth URL for user {user_id}")
+        
         return JSONResponse({
-            "status": "pending",
-            "message": "Calendar authorization required",
-            "auth_url": f"https://accounts.google.com/o/oauth2/auth?client_id=YOUR_CLIENT_ID&redirect_uri=YOUR_REDIRECT&scope=calendar.readonly"
+            "status": "success",
+            "auth_url": auth_url,
+            "message": "Please authorize Google Calendar access"
         })
     
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error starting calendar auth: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Failed to generate authorization URL: {str(e)}")
+
+@app.get("/auth/callback")
+async def calendar_oauth_callback_legacy(
+    code: Optional[str] = None,
+    state: Optional[str] = None,
+    error: Optional[str] = None
+):
+    """Handle Google OAuth callback at /auth/callback (matches configured redirect URI)"""
+    # Forward to the main callback handler
+    return await calendar_oauth_callback(code, state, error)
+
+@app.get("/api/calendar/callback")
+async def calendar_oauth_callback(
+    code: Optional[str] = None,
+    state: Optional[str] = None,
+    error: Optional[str] = None
+):
+    """Handle Google OAuth callback"""
+    try:
+        if error:
+            logger.error(f"OAuth error: {error}")
+            # Return HTML page for better UX
+            html_content = f"""
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <title>Calendar Authorization</title>
+                <style>
+                    body {{ font-family: Arial, sans-serif; text-align: center; padding: 50px; }}
+                    .error {{ color: red; }}
+                </style>
+            </head>
+            <body>
+                <h1 class="error">❌ Authorization Failed</h1>
+                <p>{error}</p>
+                <p>You can close this window.</p>
+            </body>
+            </html>
+            """
+            return HTMLResponse(content=html_content, status_code=400)
+        
+        if not code or not state:
+            raise HTTPException(status_code=400, detail="Missing authorization code or state")
+        
+        # Extract user_id from database using state
+        result = supabase.table("push_notification_settings")\
+            .select("id")\
+            .eq("oauth_state", state)\
+            .execute()
+        
+        if not result.data:
+            raise HTTPException(status_code=400, detail="Invalid or expired authorization state")
+        
+        # user_id from database is already BIGINT (int), but ensure it's int
+        user_id = result.data[0]["id"]
+        if not isinstance(user_id, int):
+            try:
+                user_id = int(user_id)
+            except (ValueError, TypeError):
+                logger.error(f"Invalid user_id from database: {user_id} (type: {type(user_id)})")
+                raise HTTPException(status_code=500, detail="Invalid user ID format in database")
+        
+        # Exchange code for tokens
+        success = calendar_service.handle_oauth_callback(user_id, code, state)
+        
+        if success:
+            logger.info(f"Calendar authorized successfully for user {user_id}")
+            # Return HTML page for better UX
+            html_content = """
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <title>Calendar Authorization</title>
+                <style>
+                    body {{ font-family: Arial, sans-serif; text-align: center; padding: 50px; }}
+                    .success {{ color: green; }}
+                </style>
+            </head>
+            <body>
+                <h1 class="success">✅ Authorization Successful!</h1>
+                <p>Google Calendar has been connected successfully.</p>
+                <p>You can close this window now.</p>
+            </body>
+            </html>
+            """
+            return HTMLResponse(content=html_content)
+        else:
+            logger.error(f"❌ OAuth callback failed for user {user_id}")
+            logger.error(f"   Check backend logs for details")
+            # Return HTML error page instead of JSON
+            html_content = """
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <title>Calendar Authorization</title>
+                <style>
+                    body { font-family: Arial, sans-serif; text-align: center; padding: 50px; }
+                    .error { color: red; }
+                </style>
+            </head>
+            <body>
+                <h1 class="error">❌ Authorization Failed</h1>
+                <p>Failed to complete authorization. Please check backend logs for details.</p>
+                <p>You can close this window and try again.</p>
+            </body>
+            </html>
+            """
+            return HTMLResponse(content=html_content, status_code=500)
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error handling OAuth callback: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Authorization callback failed: {str(e)}")
 
 @app.post("/api/calendar/fetch/{user_id}")
 async def fetch_calendar_data(
@@ -1345,7 +1553,9 @@ async def fetch_calendar_data(
         if calendar_data:
             return JSONResponse({
                 "status": "success",
-                "data": calendar_data
+                "data": calendar_data,
+                "today": calendar_data.get('today', {}),
+                "tomorrow": calendar_data.get('tomorrow', {})
             })
         else:
             return JSONResponse({
@@ -1355,6 +1565,48 @@ async def fetch_calendar_data(
     
     except Exception as e:
         logger.error(f"Error fetching calendar: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/calendar/check/{user_id}")
+async def check_calendar_authorization(
+    user_id: str,
+    user_id_obj: dict = Depends(verify_token)
+):
+    """Check if user has authorized Google Calendar access"""
+    try:
+        if not calendar_service:
+            raise HTTPException(status_code=503, detail="Calendar service not available")
+        
+        # Convert user_id to int
+        try:
+            user_id_int = int(user_id)
+        except ValueError:
+            raise HTTPException(status_code=400, detail=f"Invalid user ID format: {user_id}")
+        
+        # Check if user has authorized calendar
+        result = supabase.table("push_notification_settings")\
+            .select("calendar_authorized, google_refresh_token")\
+            .eq("id", user_id_int)\
+            .execute()
+        
+        if result.data and len(result.data) > 0:
+            is_authorized = result.data[0].get("calendar_authorized", False)
+            has_token = bool(result.data[0].get("google_refresh_token"))
+            
+            return JSONResponse({
+                "status": "success",
+                "authorized": is_authorized and has_token,
+                "has_token": has_token
+            })
+        else:
+            return JSONResponse({
+                "status": "success",
+                "authorized": False,
+                "has_token": False
+            })
+    
+    except Exception as e:
+        logger.error(f"Error checking calendar authorization: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/calendar/latest/{user_id}")
@@ -1430,6 +1682,15 @@ async def save_frequent_place(
 ):
     """Save a frequent location (home, office, etc.)"""
     try:
+        # Log what we received
+        logger.info(f"📍 Received save location request:")
+        logger.info(f"  user_id: {user_id}")
+        logger.info(f"  location_type: {location_type}")
+        logger.info(f"  location_name: {location_name}")
+        logger.info(f"  latitude: {latitude}")
+        logger.info(f"  longitude: {longitude}")
+        logger.info(f"  radius_meters: {radius_meters}")
+        
         if not location_service:
             raise HTTPException(status_code=503, detail="Location service not available")
         
@@ -1440,7 +1701,7 @@ async def save_frequent_place(
         if success:
             return JSONResponse({
                 "status": "success",
-                "message": f"{location_type.capitalize()} location saved"
+                "message": f"{location_name or location_type.capitalize()} location saved"
             })
         else:
             raise HTTPException(status_code=500, detail="Failed to save location")
@@ -1517,19 +1778,110 @@ async def get_saved_locations(
 ):
     """Get user's saved locations"""
     try:
+        # Convert to int to match database type (BIGINT)
+        user_id_int = int(user_id)
+        
         result = supabase.table("saved_locations")\
             .select("*")\
-            .eq("id", user_id)\
+            .eq("id", user_id_int)\
             .execute()
+        
+        logger.info(f"📍 Retrieved {len(result.data) if result.data else 0} saved locations for user {user_id_int}")
         
         return JSONResponse({
             "status": "success",
-            "data": result.data if result.data else []
+            "locations": result.data if result.data else []
         })
     
+    except ValueError:
+        logger.error(f"Invalid user_id format: {user_id}")
+        raise HTTPException(status_code=400, detail="Invalid user ID format")
     except Exception as e:
         logger.error(f"Error retrieving saved locations: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
+
+@app.delete("/api/location/saved/{saved_location_id}")
+async def delete_saved_location(
+    saved_location_id: str,
+    user_id_obj: dict = Depends(verify_token)
+):
+    """Delete a saved location"""
+    try:
+        # Get user_id from token (verify_token returns {"user_id": str(user_id), "id": str(user_id), "token": token})
+        user_id_str = user_id_obj.get('user_id') or user_id_obj.get('id')
+        if not user_id_str:
+            logger.error(f"Token object missing user_id: {user_id_obj}")
+            raise HTTPException(status_code=401, detail="Invalid token: missing user_id")
+        
+        # Convert user_id to int (database stores id as BIGINT/int)
+        try:
+            user_id = int(user_id_str)
+        except ValueError:
+            logger.error(f"Invalid user_id format: {user_id_str} (type: {type(user_id_str)})")
+            raise HTTPException(status_code=400, detail=f"Invalid user ID format: {user_id_str}")
+        logger.info(f"🗑️ Deleting location: {saved_location_id} for user: {user_id} (type: {type(user_id).__name__})")
+        
+        # First verify the location exists and belongs to the user
+        check_result = supabase.table("saved_locations")\
+            .select("saved_location_id, id, location_name")\
+            .eq("saved_location_id", saved_location_id)\
+            .eq("id", user_id)\
+            .execute()
+        
+        logger.info(f"🔍 Verification query result: {len(check_result.data) if check_result.data else 0} location(s) found")
+        
+        if not check_result.data:
+            logger.warning(f"⚠️ Location {saved_location_id} not found or doesn't belong to user {user_id}")
+            logger.warning(f"   Checking all locations for user {user_id}...")
+            all_locs = supabase.table("saved_locations")\
+                .select("saved_location_id, id, location_name")\
+                .eq("id", user_id)\
+                .execute()
+            logger.warning(f"   User has {len(all_locs.data) if all_locs.data else 0} total locations")
+            raise HTTPException(status_code=404, detail="Location not found or access denied")
+        
+        location_name = check_result.data[0].get('location_name', 'Unknown')
+        logger.info(f"✓ Verified location '{location_name}' (ID: {saved_location_id}) belongs to user {user_id}")
+        
+        # Delete the location
+        # Include both saved_location_id AND id to satisfy RLS policies
+        # Supabase delete() returns APIResponse with deleted row(s) in result.data
+        result = supabase.table("saved_locations")\
+            .delete()\
+            .eq("saved_location_id", saved_location_id)\
+            .eq("id", user_id)\
+            .execute()
+        
+        # Check if deletion was successful
+        # Supabase returns deleted rows in result.data
+        deleted_data = result.data if result.data else []
+        deleted_count = len(deleted_data) if deleted_data else 0
+        
+        if deleted_count > 0:
+            logger.info(f"✅ Location '{location_name}' deleted successfully (deleted {deleted_count} row(s))")
+            return JSONResponse({
+                "status": "success",
+                "message": f"Location '{location_name}' deleted successfully"
+            })
+        else:
+            # This shouldn't happen since we verified it exists
+            logger.warning(f"⚠️ Delete returned no rows - location may have already been deleted")
+            raise HTTPException(status_code=404, detail="Location not found or already deleted")
+    
+    except HTTPException:
+        raise
+    except ValueError as ve:
+        logger.error(f"❌ Type conversion error: {str(ve)}")
+        logger.error(f"   user_id_obj['id'] = {user_id_obj.get('id')} (type: {type(user_id_obj.get('id')).__name__})")
+        raise HTTPException(status_code=400, detail=f"Invalid user ID format: {str(ve)}")
+    except Exception as e:
+        logger.error(f"❌ Error deleting location: {str(e)}")
+        logger.error(f"   Error type: {type(e).__name__}")
+        logger.error(f"   Error args: {e.args if hasattr(e, 'args') else 'N/A'}")
+        import traceback
+        logger.error(f"   Full traceback:\n{traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail=f"Failed to delete location: {str(e)}")
+
 
 # ============================================
 # STRESS NOTIFICATION ENDPOINTS

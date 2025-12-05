@@ -1,9 +1,10 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import axios from "axios";
 import { API_BASE_URL } from "../config";
 import MasonryGrid from "../components/MasonryGrid";
 import NotificationBanner from "../components/NotificationBanner";
+import PermissionsManager from "../components/PermissionsManager";
 import { isConfigured as supaConfigured, uploadFileAndGetUrl } from "../utils/supabase";
 
 export default function MoodEntry({ user }) {
@@ -21,6 +22,20 @@ export default function MoodEntry({ user }) {
   const [imageFileName, setImageFileName] = useState("");
   const [notificationHistory, setNotificationHistory] = useState([]);
   const [showNotifications, setShowNotifications] = useState(false);
+
+  // Audio recording states
+  const [isRecording, setIsRecording] = useState(false);
+  const [audioBlob, setAudioBlob] = useState(null);
+  const [audioURL, setAudioURL] = useState("");
+  const mediaRecorderRef = useRef(null);
+  const audioChunksRef = useRef([]);
+
+  // Camera capture states
+  const [isCameraOpen, setIsCameraOpen] = useState(false);
+  const [capturedImage, setCapturedImage] = useState(null);
+  const videoRef = useRef(null);
+  const canvasRef = useRef(null);
+  const streamRef = useRef(null);
 
   const token = localStorage.getItem("token");
 
@@ -44,6 +59,124 @@ export default function MoodEntry({ user }) {
       console.error("Error loading notifications:", error);
     }
   };
+
+  // Audio Recording Functions
+  const startRecording = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mediaRecorder = new MediaRecorder(stream);
+      mediaRecorderRef.current = mediaRecorder;
+      audioChunksRef.current = [];
+
+      mediaRecorder.ondataavailable = (event) => {
+        if (event.data.size > 0) {
+          audioChunksRef.current.push(event.data);
+        }
+      };
+
+      mediaRecorder.onstop = () => {
+        const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/wav' });
+        setAudioBlob(audioBlob);
+        const url = URL.createObjectURL(audioBlob);
+        setAudioURL(url);
+        
+        // Convert blob to file and set in form
+        const audioFile = new File([audioBlob], `recording_${Date.now()}.wav`, { type: 'audio/wav' });
+        setForm({ ...form, mood_audio: audioFile });
+        setAudioFileName(audioFile.name);
+        
+        // Stop all tracks
+        stream.getTracks().forEach(track => track.stop());
+      };
+
+      mediaRecorder.start();
+      setIsRecording(true);
+      setError("");
+    } catch (err) {
+      console.error('Error accessing microphone:', err);
+      setError('Could not access microphone. Please grant permission and try again.');
+    }
+  };
+
+  const stopRecording = () => {
+    if (mediaRecorderRef.current && isRecording) {
+      mediaRecorderRef.current.stop();
+      setIsRecording(false);
+    }
+  };
+
+  const clearAudio = () => {
+    setAudioBlob(null);
+    setAudioURL("");
+    setForm({ ...form, mood_audio: null });
+    setAudioFileName("");
+  };
+
+  // Camera Capture Functions
+  const openCamera = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ 
+        video: { facingMode: 'user' } 
+      });
+      streamRef.current = stream;
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+      }
+      setIsCameraOpen(true);
+      setError("");
+    } catch (err) {
+      console.error('Error accessing camera:', err);
+      setError('Could not access camera. Please grant permission and try again.');
+    }
+  };
+
+  const capturePhoto = () => {
+    if (videoRef.current && canvasRef.current) {
+      const video = videoRef.current;
+      const canvas = canvasRef.current;
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(video, 0, 0);
+      
+      canvas.toBlob((blob) => {
+        const imageFile = new File([blob], `photo_${Date.now()}.jpg`, { type: 'image/jpeg' });
+        setForm({ ...form, mood_image: imageFile });
+        setImageFileName(imageFile.name);
+        setCapturedImage(URL.createObjectURL(blob));
+        closeCamera();
+      }, 'image/jpeg', 0.95);
+    }
+  };
+
+  const closeCamera = () => {
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach(track => track.stop());
+      streamRef.current = null;
+    }
+    setIsCameraOpen(false);
+  };
+
+  const clearImage = () => {
+    setCapturedImage(null);
+    setForm({ ...form, mood_image: null });
+    setImageFileName("");
+  };
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach(track => track.stop());
+      }
+      if (audioURL) {
+        URL.revokeObjectURL(audioURL);
+      }
+      if (capturedImage) {
+        URL.revokeObjectURL(capturedImage);
+      }
+    };
+  }, []);
 
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -77,8 +210,10 @@ export default function MoodEntry({ user }) {
       return;
     }
     
-    if (!form.mood_text || form.mood_text.trim() === "") {
-      setError("Please enter your mood text.");
+    // Check if at least one input is provided (text, audio, or image)
+    const hasAnyInput = form.mood_text?.trim() || form.mood_audio || form.mood_image;
+    if (!hasAnyInput) {
+      setError("Please provide at least one input: text, audio, or image.");
       setLoading(false);
       return;
     }
@@ -287,6 +422,9 @@ export default function MoodEntry({ user }) {
       </div>
 
       <div className="relative z-10 max-w-7xl mx-auto px-4 py-8">
+        {/* Permissions Manager */}
+        {form.id && <PermissionsManager userId={form.id} />}
+        
         {/* Notification Banner */}
         <NotificationBanner userId={form.id} />
         
@@ -368,6 +506,7 @@ export default function MoodEntry({ user }) {
               <span className="ml-3">✨</span>
             </h2>
             <p className="text-gray-800">Share your thoughts and emotions with us</p>
+            <p className="text-sm text-gray-600 mt-2">✨ All inputs are optional - provide text, audio, image, or any combination!</p>
           </div>
           
           {error && (
@@ -392,15 +531,16 @@ export default function MoodEntry({ user }) {
               </div>
 
               <div className="md:col-span-2">
-                <label className="block text-sm font-medium mb-2 text-gray-900">Your Thoughts & Feelings</label>
+                <label className="block text-sm font-medium mb-2 text-gray-900">
+                  Your Thoughts & Feelings (Optional)
+                </label>
                 <textarea
                   name="mood_text"
                   value={form.mood_text}
                   onChange={handleChange}
                   className="w-full border-0 rounded-2xl px-4 py-3 bg-white bg-opacity-90 backdrop-blur-sm text-gray-900 placeholder-gray-500 focus:ring-2 focus:ring-white transition-all resize-none"
-                  placeholder="Express yourself freely... What's on your mind? How do you feel?"
+                  placeholder="Express yourself freely... What's on your mind? How do you feel? (Optional - you can also just upload audio or image)"
                   rows="4"
-                  required
                 />
               </div>
 
@@ -409,21 +549,73 @@ export default function MoodEntry({ user }) {
                   <span className="mr-2">🎤</span>
                   Voice Recording (Optional)
                 </label>
-                <div className="relative">
-                  <input
-                    type="file"
-                    name="mood_audio"
-                    onChange={handleFileChange}
-                    accept="audio/*"
-                    className="hidden"
-                    id="audio-upload"
-                  />
-                  <label
-                    htmlFor="audio-upload"
-                    className="w-full border-0 rounded-2xl px-4 py-3 bg-white bg-opacity-90 backdrop-blur-sm text-gray-700 cursor-pointer hover:bg-opacity-100 transition-all flex items-center justify-center"
-                  >
-                    {audioFileName || "Choose audio file..."}
-                  </label>
+                
+                {/* Audio Recording Controls */}
+                <div className="space-y-3">
+                  {!audioBlob && !audioFileName && (
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        onClick={isRecording ? stopRecording : startRecording}
+                        className={`flex-1 border-0 rounded-2xl px-4 py-3 font-medium transition-all ${
+                          isRecording 
+                            ? 'bg-red-500 text-white animate-pulse' 
+                            : 'bg-white bg-opacity-90 backdrop-blur-sm text-gray-700 hover:bg-opacity-100'
+                        }`}
+                      >
+                        {isRecording ? (
+                          <span className="flex items-center justify-center">
+                            <span className="w-3 h-3 bg-white rounded-full mr-2 animate-pulse"></span>
+                            Stop Recording
+                          </span>
+                        ) : (
+                          <span className="flex items-center justify-center">
+                            <span className="mr-2">🎙️</span>
+                            Record Audio
+                          </span>
+                        )}
+                      </button>
+                      
+                      <input
+                        type="file"
+                        name="mood_audio"
+                        onChange={handleFileChange}
+                        accept="audio/*"
+                        className="hidden"
+                        id="audio-upload"
+                      />
+                      <label
+                        htmlFor="audio-upload"
+                        className="flex-1 border-0 rounded-2xl px-4 py-3 bg-white bg-opacity-90 backdrop-blur-sm text-gray-700 cursor-pointer hover:bg-opacity-100 transition-all flex items-center justify-center font-medium"
+                      >
+                        <span className="mr-2">📁</span>
+                        Upload File
+                      </label>
+                    </div>
+                  )}
+                  
+                  {/* Audio Preview */}
+                  {(audioURL || audioFileName) && (
+                    <div className="bg-white bg-opacity-90 backdrop-blur-sm rounded-2xl p-4">
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-sm font-medium text-gray-700">
+                          {audioFileName || 'Recorded Audio'}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={clearAudio}
+                          className="text-red-500 hover:text-red-700 font-medium text-sm"
+                        >
+                          ✕ Remove
+                        </button>
+                      </div>
+                      {audioURL && (
+                        <audio controls className="w-full mt-2">
+                          <source src={audioURL} type="audio/wav" />
+                        </audio>
+                      )}
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -432,21 +624,101 @@ export default function MoodEntry({ user }) {
                   <span className="mr-2">📷</span>
                   Photo (Optional)
                 </label>
-                <div className="relative">
-                  <input
-                    type="file"
-                    name="mood_image"
-                    onChange={handleFileChange}
-                    accept="image/*"
-                    className="hidden"
-                    id="image-upload"
-                  />
-                  <label
-                    htmlFor="image-upload"
-                    className="w-full border-0 rounded-2xl px-4 py-3 bg-white bg-opacity-90 backdrop-blur-sm text-gray-700 cursor-pointer hover:bg-opacity-100 transition-all flex items-center justify-center"
-                  >
-                    {imageFileName || "Choose image file..."}
-                  </label>
+                
+                {/* Camera Controls */}
+                <div className="space-y-3">
+                  {!isCameraOpen && !capturedImage && !imageFileName && (
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        onClick={openCamera}
+                        className="flex-1 border-0 rounded-2xl px-4 py-3 bg-white bg-opacity-90 backdrop-blur-sm text-gray-700 hover:bg-opacity-100 transition-all font-medium"
+                      >
+                        <span className="flex items-center justify-center">
+                          <span className="mr-2">📸</span>
+                          Open Camera
+                        </span>
+                      </button>
+                      
+                      <input
+                        type="file"
+                        name="mood_image"
+                        onChange={handleFileChange}
+                        accept="image/*"
+                        className="hidden"
+                        id="image-upload"
+                      />
+                      <label
+                        htmlFor="image-upload"
+                        className="flex-1 border-0 rounded-2xl px-4 py-3 bg-white bg-opacity-90 backdrop-blur-sm text-gray-700 cursor-pointer hover:bg-opacity-100 transition-all flex items-center justify-center font-medium"
+                      >
+                        <span className="mr-2">📁</span>
+                        Upload File
+                      </label>
+                    </div>
+                  )}
+                  
+                  {/* Camera View */}
+                  {isCameraOpen && (
+                    <div className="bg-white bg-opacity-90 backdrop-blur-sm rounded-2xl p-4">
+                      <video
+                        ref={videoRef}
+                        autoPlay
+                        playsInline
+                        className="w-full rounded-lg mb-3"
+                      />
+                      <canvas ref={canvasRef} className="hidden" />
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          onClick={capturePhoto}
+                          className="flex-1 bg-gradient-to-r from-purple-500 to-pink-500 text-white py-2 rounded-xl font-medium hover:shadow-lg transition-all"
+                        >
+                          <span className="flex items-center justify-center">
+                            <span className="mr-2">📸</span>
+                            Capture Photo
+                          </span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={closeCamera}
+                          className="px-4 bg-gray-300 text-gray-700 py-2 rounded-xl font-medium hover:bg-gray-400 transition-all"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                  
+                  {/* Image Preview */}
+                  {(capturedImage || imageFileName) && (
+                    <div className="bg-white bg-opacity-90 backdrop-blur-sm rounded-2xl p-4">
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-sm font-medium text-gray-700">
+                          {imageFileName || 'Captured Photo'}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={clearImage}
+                          className="text-red-500 hover:text-red-700 font-medium text-sm"
+                        >
+                          ✕ Remove
+                        </button>
+                      </div>
+                      {capturedImage && (
+                        <img 
+                          src={capturedImage} 
+                          alt="Captured" 
+                          className="w-full rounded-lg mt-2"
+                        />
+                      )}
+                      {imageFileName && !capturedImage && (
+                        <div className="text-sm text-gray-600 mt-2">
+                          ✓ {imageFileName}
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
