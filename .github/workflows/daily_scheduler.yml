@@ -1,8 +1,8 @@
-name: Daily 11:10 PM Scheduler
+name: Daily 12:30 AM Scheduler
 
 on:
   schedule:
-    - cron: "40 17 * * *"  # 11:10 PM IST = 17:40 UTC
+    - cron: "30 19 * * *"  # 12:30 AM IST = 19:00 UTC
   workflow_dispatch:
 
 jobs:

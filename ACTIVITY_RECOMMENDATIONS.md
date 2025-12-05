@@ -2,18 +2,19 @@
 
 ## Overview
 
-The Activity Recommendations System generates 5 personalized daily activity recommendations based on comprehensive user data including calendar schedules, location patterns, push notification responses, and user habits.
+The Activity Recommendations System generates 5 personalized daily activity recommendations based on comprehensive user data including calendar schedules, location patterns, push notification responses, and user habits. **Recommendations are sent directly as push notifications to users' devices.**
 
 ## 🎯 Key Features
 
-- **Daily 7 AM Schedule**: Automatically runs at 7:00 AM daily
+- **Daily 11:10 PM Schedule**: Automatically runs at 11:10 PM daily (currently set for testing)
 - **5 Personalized Recommendations**: AI-generated activities tailored to each user
 - **Multi-Source Data Integration**: Uses calendar, location, notifications, and habits
 - **Smart Scheduling**: Considers today's and tomorrow's calendar for optimal timing
 - **Stress Tracking**: Monitors stress levels and provides appropriate recommendations
+- **Push Notification Delivery**: Sends recommendations directly to user devices
 - **API Endpoints**: RESTful API for frontend integration
 
-## 📅 Daily 7 AM Workflow
+## 📅 Daily 11:10 PM Workflow (Testing Schedule)
 
 ### 1. Calendar Data Fetch ✅
 - Fetches today's and tomorrow's calendar events
@@ -34,38 +35,42 @@ The Activity Recommendations System generates 5 personalized daily activity reco
 - **NEW**: Collects all available user data
 - Generates 5 personalized activity recommendations using AI
 - Considers calendar schedule, location patterns, and mood
-- Stores recommendations in `daily_recommendations` table
+- **Sends recommendations as push notification to user's device** 📱
 
 ## 🔄 Data Flow
 
 ```
-7:00 AM Daily Trigger
+11:10 PM Daily Trigger (Testing Schedule)
 ├── 1. Fetch Calendar Data (today + tomorrow)
 ├── 2. Analyze Location Patterns
-├── 3. Send Push Notification
+├── 3. Send Push Notification (mood check)
 └── 4. Generate Activity Recommendations
     ├── Collect: Calendar + Location + Notifications + Habits
     ├── AI Analysis: AWS Bedrock Claude 3.5 Sonnet
     ├── Generate: 5 personalized activities
-    └── Store: daily_recommendations table
+    └── Send: Push notification with recommendations 📱
 ```
 
-## 🗄️ Database Schema
+## 📱 Push Notification Format
 
-### New Table: `daily_recommendations`
+### Recommendation Notification Structure
 
-```sql
-CREATE TABLE daily_recommendations (
-    id INTEGER NOT NULL,                    -- User ID
-    date DATE NOT NULL,                     -- Recommendation date
-    recommendations JSONB NOT NULL,        -- Array of 5 recommendations
-    generated_at TIMESTAMP DEFAULT NOW(),  -- Generation timestamp
-    data_sources JSONB,                    -- Which data sources were used
-    PRIMARY KEY (id, date)
-);
+The 5 recommendations are sent as a single push notification with this format:
+
+```json
+{
+  "title": "🎯 Your Daily Activity Recommendations",
+  "body": "Here are 5 personalized activities for today:\n\n1. Morning hydration - Start your day with water\n2. Desk stretches - Do light stretches during breaks\n3. Lunch walk - Take a 15-minute outdoor walk\n4. Evening stretch - Ease tension after work\n5. Early sleep prep - Prepare for tomorrow's busy day",
+  "data": {
+    "type": "daily_recommendations",
+    "user_id": "1",
+    "timestamp": "2025-01-12T23:10:00Z",
+    "recommendations_count": 5
+  }
+}
 ```
 
-### Recommendation JSON Structure
+### Individual Recommendation Structure (Internal)
 
 ```json
 [
@@ -77,7 +82,7 @@ CREATE TABLE daily_recommendations (
   },
   {
     "id": 2,
-    "title": "Desk stretches",
+    "title": "Desk stretches", 
     "description": "Do light stretches during work breaks",
     "full_text": "Desk stretches - Do light stretches during work breaks"
   }

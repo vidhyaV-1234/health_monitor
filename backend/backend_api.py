@@ -1329,6 +1329,85 @@ async def toggle_notifications(
         logger.error(f"Error toggling notifications: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.get("/api/notifications/debug/{user_id}")
+async def debug_fcm_token(
+    user_id: str,
+    user_id_obj: dict = Depends(verify_token)
+):
+    """Debug FCM token for a specific user"""
+    try:
+        # Check if user has FCM token
+        result = supabase.table("push_notification_settings")\
+            .select("fcm_token, notifications_enabled, created_at, updated_at")\
+            .eq("id", user_id)\
+            .execute()
+        
+        if result.data:
+            user_settings = result.data[0]
+            fcm_token = user_settings.get('fcm_token')
+            
+            return JSONResponse({
+                "status": "success",
+                "user_id": user_id,
+                "has_fcm_token": bool(fcm_token),
+                "fcm_token_preview": fcm_token[:20] + "..." if fcm_token else None,
+                "notifications_enabled": user_settings.get('notifications_enabled', False),
+                "created_at": user_settings.get('created_at'),
+                "updated_at": user_settings.get('updated_at'),
+                "firebase_initialized": notification_service.firebase_initialized if notification_service else False
+            })
+        else:
+            return JSONResponse({
+                "status": "success",
+                "user_id": user_id,
+                "has_fcm_token": False,
+                "message": "User not found in push_notification_settings table",
+                "firebase_initialized": notification_service.firebase_initialized if notification_service else False
+            })
+            
+    except Exception as e:
+        print(f"❌ Error debugging FCM token: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/notifications/test/{user_id}")
+async def send_test_notification(
+    user_id: str,
+    user_id_obj: dict = Depends(verify_token)
+):
+    """Send a test notification to verify FCM is working"""
+    try:
+        if not notification_service:
+            raise HTTPException(status_code=503, detail="Notification service not available")
+        
+        if not notification_service.firebase_initialized:
+            raise HTTPException(status_code=503, detail="Firebase not initialized")
+        
+        # Send test notification
+        test_notification = {
+            'title': '🧪 Test Notification',
+            'body': 'This is a test to verify your FCM token is working correctly.',
+            'data': {
+                'type': 'fcm_test',
+                'user_id': user_id,
+                'timestamp': datetime.now().isoformat()
+            }
+        }
+        
+        response = notification_service.send_notification(user_id, test_notification)
+        
+        if response:
+            return JSONResponse({
+                "status": "success",
+                "message": "Test notification sent successfully",
+                "response_id": response
+            })
+        else:
+            raise HTTPException(status_code=500, detail="Failed to send test notification")
+            
+    except Exception as e:
+        print(f"❌ Error sending test notification: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 # ============================================
 # GOOGLE CALENDAR ENDPOINTS
 # ============================================
@@ -1967,7 +2046,7 @@ async def generate_user_recommendations(
     user_id: str,
     user_id_obj: dict = Depends(verify_token)
 ):
-    """Generate 5 personalized activity recommendations for a user"""
+    """Generate 5 personalized activity recommendations and send as push notification"""
     try:
         # Import here to avoid circular imports
         from activity_recommendation_service import ActivityRecommendationService
@@ -1981,6 +2060,7 @@ async def generate_user_recommendations(
         if result['status'] == 'success':
             return JSONResponse({
                 "status": "success",
+                "message": "5 activity recommendations generated and sent as push notification",
                 "user_id": user_id,
                 "recommendations": result['recommendations'],
                 "mood": result.get('mood'),
@@ -1988,6 +2068,7 @@ async def generate_user_recommendations(
                 "stress_day": result.get('stress_day'),
                 "stress_alert": result.get('stress_alert'),
                 "generated_at": result['generated_at'],
+                "notification_sent": True,
                 "data_sources": result['data_sources']
             })
         else:
@@ -2002,36 +2083,18 @@ async def get_latest_recommendations(
     user_id: str,
     user_id_obj: dict = Depends(verify_token)
 ):
-    """Get the latest recommendations for a user"""
+    """Note: Recommendations are sent as push notifications, not stored in database"""
     try:
-        # Import here to avoid circular imports
-        from activity_recommendation_service import ActivityRecommendationService
-        
-        # Initialize the service
-        recommendation_service = ActivityRecommendationService(supabase)
-        
-        # Get latest recommendations
-        result = recommendation_service.get_latest_recommendations(user_id)
-        
-        if result:
-            return JSONResponse({
-                "status": "success",
-                "user_id": user_id,
-                "date": result['date'],
-                "recommendations": result['recommendations'],
-                "generated_at": result['generated_at'],
-                "data_sources": result['data_sources']
-            })
-        else:
-            return JSONResponse({
-                "status": "success",
-                "user_id": user_id,
-                "message": "No recommendations found",
-                "recommendations": []
-            })
+        return JSONResponse({
+            "status": "success",
+            "user_id": user_id,
+            "message": "Recommendations are sent as push notifications to your device",
+            "notification_type": "daily_recommendations",
+            "info": "Check your device notifications for the 5 daily activity recommendations"
+        })
             
     except Exception as e:
-        print(f"❌ Error retrieving recommendations: {str(e)}")
+        print(f"❌ Error: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/recommendations/history/{user_id}")
@@ -2040,34 +2103,39 @@ async def get_recommendations_history(
     limit: int = 7,
     user_id_obj: dict = Depends(verify_token)
 ):
-    """Get recommendations history for a user"""
+    """Get notification history for recommendations (since they're sent as notifications)"""
     try:
-        result = supabase.table('daily_recommendations')\
+        # Get notification log entries for daily recommendations
+        result = supabase.table('notification_log')\
             .select('*')\
             .eq('id', user_id)\
-            .order('date', desc=True)\
+            .eq('notification_type', 'daily_recommendations')\
+            .order('sent_at', desc=True)\
             .limit(limit)\
             .execute()
         
-        recommendations_history = []
+        notification_history = []
         if result.data:
             for record in result.data:
-                recommendations_history.append({
-                    "date": record['date'],
-                    "recommendations": json.loads(record['recommendations']),
-                    "generated_at": record['generated_at'],
-                    "data_sources": json.loads(record.get('data_sources', '{}'))
+                notification_history.append({
+                    "date": record['sent_at'][:10],  # Extract date from timestamp
+                    "title": record['title'],
+                    "body": record['body'],
+                    "sent_at": record['sent_at'],
+                    "response_id": record.get('response_id')
                 })
         
         return JSONResponse({
             "status": "success",
             "user_id": user_id,
-            "history": recommendations_history,
-            "total": len(recommendations_history)
+            "message": "Recommendations are sent as push notifications",
+            "notification_history": notification_history,
+            "total": len(notification_history),
+            "info": "This shows when recommendation notifications were sent to your device"
         })
         
     except Exception as e:
-        print(f"❌ Error retrieving recommendations history: {str(e)}")
+        print(f"❌ Error retrieving notification history: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 # ============================================
@@ -2092,9 +2160,13 @@ async def api_info():
             "multimodal_analysis": "POST /api/analyze-multimodal",
             "update_report": "POST /api/update-report",
             "recommendations": {
-                "generate": "POST /api/recommendations/generate/{user_id} - Generate 5 activity recommendations",
-                "latest": "GET /api/recommendations/latest/{user_id} - Get latest recommendations",
-                "history": "GET /api/recommendations/history/{user_id} - Get recommendations history"
+                "generate": "POST /api/recommendations/generate/{user_id} - Generate 5 activity recommendations and send as push notification",
+                "latest": "GET /api/recommendations/latest/{user_id} - Info about notification-based recommendations",
+                "history": "GET /api/recommendations/history/{user_id} - Get notification history for recommendations"
+            },
+            "notifications_debug": {
+                "debug": "GET /api/notifications/debug/{user_id} - Debug FCM token status for user",
+                "test": "POST /api/notifications/test/{user_id} - Send test notification to verify FCM"
             }
         },
         "models": {

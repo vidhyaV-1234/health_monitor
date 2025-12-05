@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import axios from "axios";
 import { API_BASE_URL } from "../config";
 import LocationManager from "./LocationManager";
+import { getFCMToken } from "../firebase-config";
 
 export default function PermissionsManager({ userId }) {
   const [permissions, setPermissions] = useState({
@@ -249,15 +250,24 @@ export default function PermissionsManager({ userId }) {
   // Register for push notifications (requires FCM setup)
   const registerForNotifications = async () => {
     try {
-      // For now, just mock registration
-      // In production, you'd use Firebase Cloud Messaging to get FCM token
-      const mockFCMToken = `mock_token_${userId}_${Date.now()}`;
+      console.log('🔔 Attempting to get FCM token...');
+      
+      // Get real FCM token from Firebase
+      const fcmToken = await getFCMToken();
+      
+      if (!fcmToken) {
+        console.warn('⚠️ Could not get FCM token, using fallback');
+        alert('⚠️ Firebase is not configured. Please set up Firebase configuration in firebase-config.js');
+        return;
+      }
+      
+      console.log('✅ FCM token obtained:', fcmToken.substring(0, 20) + '...');
       
       await axios.post(
         `${API_BASE_URL}/api/notifications/register`,
         new URLSearchParams({
           user_id: userId,
-          fcm_token: mockFCMToken
+          fcm_token: fcmToken
         }),
         { headers: { Authorization: `Bearer ${token}` }}
       );
@@ -267,7 +277,31 @@ export default function PermissionsManager({ userId }) {
       
     } catch (error) {
       console.error('Error registering for notifications:', error);
-      alert('⚠️ Could not register for notifications. Service may not be fully configured.');
+      
+      // Fallback to mock token if Firebase is not configured
+      if (error.message?.includes('Firebase') || error.message?.includes('VAPID')) {
+        console.log('🔄 Firebase not configured, using mock token for development');
+        try {
+          const mockFCMToken = `mock_token_${userId}_${Date.now()}`;
+          
+          await axios.post(
+            `${API_BASE_URL}/api/notifications/register`,
+            new URLSearchParams({
+              user_id: userId,
+              fcm_token: mockFCMToken
+            }),
+            { headers: { Authorization: `Bearer ${token}` }}
+          );
+          
+          alert('⚠️ Notifications enabled with mock token (Firebase not configured).\nYou will receive mood check-ins at 7 AM and 7 PM daily.');
+          setTracking(prev => ({ ...prev, notificationsEnabled: true }));
+        } catch (mockError) {
+          console.error('Error with mock registration:', mockError);
+          alert('⚠️ Could not register for notifications. Service may not be fully configured.');
+        }
+      } else {
+        alert('⚠️ Could not register for notifications. Service may not be fully configured.');
+      }
     }
   };
 

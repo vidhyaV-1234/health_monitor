@@ -13,7 +13,20 @@ function App() {
 
   useEffect(() => {
     checkAuthStatus();
+    registerServiceWorker();
   }, []);
+
+  // Register service worker for FCM
+  const registerServiceWorker = async () => {
+    if ('serviceWorker' in navigator) {
+      try {
+        const registration = await navigator.serviceWorker.register('/firebase-messaging-sw.js');
+        console.log('✅ Service Worker registered:', registration.scope);
+      } catch (error) {
+        console.error('❌ Service Worker registration failed:', error);
+      }
+    }
+  };
 
   const checkAuthStatus = async () => {
     const token = localStorage.getItem("token");

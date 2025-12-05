@@ -156,8 +156,8 @@ class ActivityRecommendationService:
             # Parse recommendations from the analysis
             recommendations = self.parse_recommendations(result['analysis'])
             
-            # Save recommendations to database
-            self.save_recommendations(user_id, recommendations, user_data)
+            # Send recommendations as push notification
+            notification_sent = self.send_recommendations_as_notifications(user_id, recommendations)
             
             return {
                 'status': 'success',
@@ -256,59 +256,53 @@ class ActivityRecommendationService:
         
         return recommendations
     
-    def save_recommendations(self, user_id: str, recommendations: List[Dict], user_data: Dict):
-        """Save generated recommendations to database"""
+    def send_recommendations_as_notifications(self, user_id: str, recommendations: List[Dict]) -> bool:
+        """Send the 5 activity recommendations as push notifications to user"""
         try:
-            # Save to daily_recommendations table
-            recommendation_record = {
-                'id': user_id,
-                'date': date.today().isoformat(),
-                'recommendations': json.dumps(recommendations),
-                'generated_at': datetime.now().isoformat(),
-                'data_sources': json.dumps({
-                    'calendar_today': bool(user_data.get('today_calendar')),
-                    'calendar_tomorrow': bool(user_data.get('tomorrow_calendar')),
-                    'location_data': bool(user_data.get('location_data')),
-                    'notification_responses': len(user_data.get('notification_responses', [])),
-                    'habit_data': bool(user_data.get('habit_data'))
-                })
+            from push_notification_service import PushNotificationService
+            
+            # Initialize notification service
+            notification_service = PushNotificationService(self.supabase)
+            
+            # Create a single notification with all 5 recommendations
+            recommendations_text = "\n".join([
+                f"{i}. {rec.get('title', 'Activity')} - {rec.get('description', '')}"
+                for i, rec in enumerate(recommendations, 1)
+            ])
+            
+            notification = {
+                'title': '🎯 Your Daily Activity Recommendations',
+                'body': f'Here are 5 personalized activities for today:\n\n{recommendations_text}',
+                'data': {
+                    'type': 'daily_recommendations',
+                    'user_id': user_id,
+                    'timestamp': datetime.now().isoformat(),
+                    'recommendations_count': len(recommendations)
+                }
             }
             
-            # Use upsert to handle both insert and update
-            self.supabase.table('daily_recommendations')\
-                .upsert(recommendation_record, on_conflict='id,date')\
-                .execute()
+            # Send the notification
+            response = notification_service.send_notification(user_id, notification)
             
-            self.logger.info(f"✅ Recommendations saved for user {user_id}")
+            if response:
+                self.logger.info(f"✅ Recommendations sent as notification to user {user_id}")
+                return True
+            else:
+                self.logger.warning(f"⚠️ Failed to send recommendations notification to user {user_id}")
+                return False
             
         except Exception as e:
-            self.logger.error(f"❌ Error saving recommendations: {str(e)}")
+            self.logger.error(f"❌ Error sending recommendations notification: {str(e)}")
+            return False
     
     def get_latest_recommendations(self, user_id: str) -> Optional[Dict]:
-        """Get the latest recommendations for a user"""
-        try:
-            result = self.supabase.table('daily_recommendations')\
-                .select('*')\
-                .eq('id', user_id)\
-                .order('date', desc=True)\
-                .limit(1)\
-                .execute()
-            
-            if result.data:
-                record = result.data[0]
-                return {
-                    'user_id': user_id,
-                    'date': record['date'],
-                    'recommendations': json.loads(record['recommendations']),
-                    'generated_at': record['generated_at'],
-                    'data_sources': json.loads(record.get('data_sources', '{}'))
-                }
-            
-            return None
-            
-        except Exception as e:
-            self.logger.error(f"❌ Error retrieving recommendations: {str(e)}")
-            return None
+        """Note: Recommendations are now sent as notifications, not stored in database"""
+        self.logger.info(f"ℹ️ Recommendations are sent as push notifications to user {user_id}")
+        return {
+            'message': 'Recommendations are sent as push notifications, not stored in database',
+            'user_id': user_id,
+            'notification_type': 'daily_recommendations'
+        }
     
     def generate_recommendations_for_all_users(self) -> Dict:
         """Generate recommendations for all users with complete data"""

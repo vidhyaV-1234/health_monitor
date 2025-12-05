@@ -2,8 +2,8 @@
 Mood Notification Scheduler
 Sends morning and evening mood check notifications to all users
 
-Morning: 7:00 AM
-Evening: 7:00 PM (19:00)
+Morning: 12:30 AM (00:30)
+Evening: 12:30 AM (00:30)
 
 Run this script using:
 1. Manual: python mood_notification_scheduler.py
@@ -166,25 +166,24 @@ def run_scheduler():
     logger.info("MOOD NOTIFICATION SCHEDULER STARTED")
     logger.info("="*70)
     logger.info("Scheduled times:")
-    logger.info("  ☀️ Morning: 5:35 PM (17:35) - for testing")
-    logger.info("  🌙 Evening: 5:35 PM (17:35) - for testing")
+    logger.info("  ☀️ Morning: 12:30 AM (00:30)")
+    logger.info("  🌙 Evening: 12:30 AM (00:30)")
     logger.info("="*70)
     logger.info(f"Current time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
     
-    # Schedule morning notifications at 5:35 PM (for testing)
-    schedule.every().day.at("17:35").do(send_morning_notifications)
+    # Schedule morning notifications at 12:30 AM
+    schedule.every().day.at("00:30").do(send_morning_notifications)
     
-    # Schedule evening notifications at 5:35 PM (for testing)
-    # In production, change evening to "19:00" (7 PM)
-    schedule.every().day.at("17:35").do(send_evening_notifications)
+    # Schedule evening notifications at 12:30 AM
+    schedule.every().day.at("00:30").do(send_evening_notifications)
     
     # Run immediately for testing if current time is close to scheduled time
     current_hour = datetime.now().hour
     current_minute = datetime.now().minute
     
-    # If it's close to 5:35 PM (within 5 minutes), run immediately
-    if current_hour == 17 and 30 <= current_minute <= 40:
-        logger.info("⏰ Current time is close to 5:35 PM, running notifications immediately...\n")
+    # If it's close to 12:30 AM (within 5 minutes), run immediately
+    if current_hour == 0 and 25 <= current_minute <= 35:
+        logger.info("⏰ Current time is close to 12:30 AM, running notifications immediately...\n")
         send_morning_notifications()
         send_evening_notifications()
     
@@ -223,7 +222,7 @@ if __name__ == "__main__":
     print("1. Send morning notifications now")
     print("2. Send evening notifications now")
     print("3. Run both now")
-    print("4. Run continuous scheduler (daily at 5:35 PM)")
+    print("4. Run continuous scheduler (daily at 12:30 AM)")
     print("="*70)
     
     import sys
@@ -244,9 +243,9 @@ if __name__ == "__main__":
         send_evening_notifications()
     elif choice == "4":
         print("\nStarting continuous scheduler...")
-        print("Notifications will be sent daily at 7:00 PM (19:00)")
-        print("\n⚠️  IMPORTANT: The scheduler must be running at 7:00 PM for notifications to send!")
-        print("   If you start it after 7:00 PM, notifications will send tomorrow at 7:00 PM.")
+        print("Notifications will be sent daily at 12:30 AM (00:30)")
+        print("\n⚠️  IMPORTANT: The scheduler must be running at 12:30 AM for notifications to send!")
+        print("   If you start it after 12:30 AM, notifications will send tomorrow at 12:30 AM.")
         print("\nPress Ctrl+C to stop\n")
         try:
             run_scheduler()

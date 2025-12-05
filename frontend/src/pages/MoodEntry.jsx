@@ -5,6 +5,7 @@ import { API_BASE_URL } from "../config";
 import MasonryGrid from "../components/MasonryGrid";
 import NotificationBanner from "../components/NotificationBanner";
 import PermissionsManager from "../components/PermissionsManager";
+import FCMTest from "../components/FCMTest";
 import { isConfigured as supaConfigured, uploadFileAndGetUrl } from "../utils/supabase";
 
 export default function MoodEntry({ user }) {
@@ -754,6 +755,19 @@ export default function MoodEntry({ user }) {
           </div>
         )}
 
+
+        {/* FCM Debug Section */}
+        <div className="mb-8">
+          <details className="bg-white rounded-2xl shadow-lg overflow-hidden">
+            <summary className="p-4 cursor-pointer hover:bg-gray-50 transition-colors font-semibold text-gray-700 flex items-center">
+              <span className="mr-2">🔧</span>
+              FCM Token Debug (Click to expand)
+            </summary>
+            <div className="border-t">
+              <FCMTest />
+            </div>
+          </details>
+        </div>
 
         {/* Empty State */}
         {!result && (
