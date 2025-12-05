@@ -313,32 +313,32 @@ def run_all_schedulers():
     logger.info("ACTIVITY RECOMMENDATION SCHEDULER STARTED")
     logger.info("="*70)
     logger.info("Scheduled tasks:")
-    logger.info("  📅 Calendar fetch & backup: 10:00 PM (22:00) - TESTING")
-    logger.info("  📍 Location analysis & summary: 10:00 PM (22:00) - TESTING")
-    logger.info("  🔔 Mood notifications: 10:00 PM (22:00) - TESTING")
-    logger.info("  🎯 Activity recommendations: 10:00 PM (22:00) - TESTING")
+    logger.info("  📅 Calendar fetch & backup: 10:45 PM (22:45) - TESTING")
+    logger.info("  📍 Location analysis & summary: 10:45 PM (22:45) - TESTING")
+    logger.info("  🔔 Mood notifications: 10:45 PM (22:45) - TESTING")
+    logger.info("  🎯 Activity recommendations: 10:45 PM (22:45) - TESTING")
     logger.info("="*70)
     logger.info(f"Current time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
     
-    # Schedule ALL tasks at 10:00 PM (for testing)
-    schedule.every().day.at("22:00").do(fetch_calendar_for_all_users)
-    schedule.every().day.at("22:00").do(analyze_locations_for_all_users)
-    schedule.every().day.at("22:00").do(send_mood_notifications)
-    schedule.every().day.at("22:00").do(generate_activity_recommendations)
+    # Schedule ALL tasks at 10:45 PM (for testing)
+    schedule.every().day.at("22:45").do(fetch_calendar_for_all_users)
+    schedule.every().day.at("22:45").do(analyze_locations_for_all_users)
+    schedule.every().day.at("22:45").do(send_mood_notifications)
+    schedule.every().day.at("22:45").do(generate_activity_recommendations)
     
     # Run immediately for testing (if current time is close to scheduled time)
     current_hour = datetime.now().hour
     current_minute = datetime.now().minute
     
-    # If it's close to 10:00 PM (within 10 minutes), run all tasks immediately
-    if current_hour == 22 and 0 <= current_minute <= 10:
-        logger.info("⏰ Current time is close to 10:00 PM, running all tasks immediately...\n")
+    # If it's close to 10:45 PM (within 10 minutes), run all tasks immediately
+    if current_hour == 22 and 35 <= current_minute <= 55:
+        logger.info("⏰ Current time is close to 10:45 PM, running all tasks immediately...\n")
         fetch_calendar_for_all_users()
         analyze_locations_for_all_users()
         send_mood_notifications()
         generate_activity_recommendations()
-    elif current_hour == 21 and current_minute >= 50:
-        logger.info("⏰ Current time is close to 10:00 PM, running all tasks immediately...\n")
+    elif current_hour == 22 and current_minute >= 35:
+        logger.info("⏰ Current time is close to 10:45 PM, running all tasks immediately...\n")
         fetch_calendar_for_all_users()
         analyze_locations_for_all_users()
         send_mood_notifications()
@@ -399,10 +399,10 @@ if __name__ == "__main__":
     elif choice == "2":
         print("\nStarting continuous scheduler...")
         print("All tasks will run at:")
-        print("  - Calendar fetch & backup: 10:00 PM (22:00) - TESTING")
-        print("  - Location analysis & summary: 10:00 PM (22:00) - TESTING")
-        print("  - Mood notifications: 10:00 PM (22:00) - TESTING")
-        print("  - Activity recommendations: 10:00 PM (22:00) - TESTING")
+        print("  - Calendar fetch & backup: 10:45 PM (22:45) - TESTING")
+        print("  - Location analysis & summary: 10:45 PM (22:45) - TESTING")
+        print("  - Mood notifications: 10:45 PM (22:45) - TESTING")
+        print("  - Activity recommendations: 10:45 PM (22:45) - TESTING")
         print("\n⚠️  IMPORTANT: The scheduler must be running at the scheduled times!")
         print("   If you start it after the scheduled time, tasks will run tomorrow.")
         print("\nPress Ctrl+C to stop\n")
@@ -423,10 +423,10 @@ if __name__ == "__main__":
         print("STARTING CONTINUOUS SCHEDULER")
         print("="*70)
         print("\nAll tasks will run at:")
-        print("  - Calendar fetch & backup: 10:00 PM (22:00) - TESTING")
-        print("  - Location analysis & summary: 10:00 PM (22:00) - TESTING")
-        print("  - Mood notifications: 10:00 PM (22:00) - TESTING")
-        print("  - Activity recommendations: 10:00 PM (22:00) - TESTING")
+        print("  - Calendar fetch & backup: 10:45 PM (22:45) - TESTING")
+        print("  - Location analysis & summary: 10:45 PM (22:45) - TESTING")
+        print("  - Mood notifications: 10:45 PM (22:45) - TESTING")
+        print("  - Activity recommendations: 10:45 PM (22:45) - TESTING")
         print("\nPress Ctrl+C to stop\n")
         try:
             run_all_schedulers()
