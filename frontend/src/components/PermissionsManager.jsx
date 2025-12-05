@@ -278,30 +278,22 @@ export default function PermissionsManager({ userId }) {
     } catch (error) {
       console.error('Error registering for notifications:', error);
       
-      // Fallback to mock token if Firebase is not configured
-      if (error.message?.includes('Firebase') || error.message?.includes('VAPID')) {
-        console.log('🔄 Firebase not configured, using mock token for development');
-        try {
-          const mockFCMToken = `mock_token_${userId}_${Date.now()}`;
-          
-          await axios.post(
-            `${API_BASE_URL}/api/notifications/register`,
-            new URLSearchParams({
-              user_id: userId,
-              fcm_token: mockFCMToken
-            }),
-            { headers: { Authorization: `Bearer ${token}` }}
-          );
-          
-          alert('⚠️ Notifications enabled with mock token (Firebase not configured).\nYou will receive mood check-ins at 7 AM and 7 PM daily.');
-          setTracking(prev => ({ ...prev, notificationsEnabled: true }));
-        } catch (mockError) {
-          console.error('Error with mock registration:', mockError);
-          alert('⚠️ Could not register for notifications. Service may not be fully configured.');
-        }
+      // Show specific error messages to help with debugging
+      let errorMessage = '⚠️ Could not register for notifications.';
+      
+      if (error.message?.includes('Firebase')) {
+        errorMessage += '\n\n🔥 Firebase Error: Please check your Firebase configuration in firebase-config.js';
+      } else if (error.message?.includes('VAPID')) {
+        errorMessage += '\n\n🔑 VAPID Key Error: Please set your VAPID key in the .env file';
+      } else if (error.message?.includes('permission')) {
+        errorMessage += '\n\n🔔 Permission Error: Please allow notifications in your browser';
+      } else if (error.response?.status === 503) {
+        errorMessage += '\n\n🔧 Service Error: Notification service is not available';
       } else {
-        alert('⚠️ Could not register for notifications. Service may not be fully configured.');
+        errorMessage += `\n\nError: ${error.message}`;
       }
+      
+      alert(errorMessage);
     }
   };
 

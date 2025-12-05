@@ -86,10 +86,11 @@ If you want to send actual push notifications from your backend, you'll need:
 
 ### Development Mode:
 
-If Firebase is not configured, the app will fall back to mock tokens for development. You'll see:
-- "⚠️ Notifications enabled with mock token (Firebase not configured)"
+If Firebase is not configured, the app will show clear error messages to help you complete the setup:
+- "🔥 Firebase Error: Please check your Firebase configuration"
+- "🔑 VAPID Key Error: Please set your VAPID key in the .env file"
 
-This allows you to test the notification flow without Firebase setup.
+This ensures only valid FCM tokens are used for notifications.
 
 ## Testing Notifications
 
