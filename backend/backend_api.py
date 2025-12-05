@@ -1959,6 +1959,118 @@ async def get_notification_history(user_id: str, limit: int = 10):
         raise HTTPException(status_code=500, detail=f"History fetch error: {str(e)}")
 
 # ============================================
+# ACTIVITY RECOMMENDATIONS ENDPOINTS
+# ============================================
+
+@app.post("/api/recommendations/generate/{user_id}")
+async def generate_user_recommendations(
+    user_id: str,
+    user_id_obj: dict = Depends(verify_token)
+):
+    """Generate 5 personalized activity recommendations for a user"""
+    try:
+        # Import here to avoid circular imports
+        from activity_recommendation_service import ActivityRecommendationService
+        
+        # Initialize the service
+        recommendation_service = ActivityRecommendationService(supabase)
+        
+        # Generate recommendations
+        result = recommendation_service.generate_recommendations(user_id)
+        
+        if result['status'] == 'success':
+            return JSONResponse({
+                "status": "success",
+                "user_id": user_id,
+                "recommendations": result['recommendations'],
+                "mood": result.get('mood'),
+                "stress_level": result.get('stress_level'),
+                "stress_day": result.get('stress_day'),
+                "stress_alert": result.get('stress_alert'),
+                "generated_at": result['generated_at'],
+                "data_sources": result['data_sources']
+            })
+        else:
+            raise HTTPException(status_code=500, detail=result.get('message', 'Failed to generate recommendations'))
+            
+    except Exception as e:
+        print(f"❌ Error generating recommendations: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/recommendations/latest/{user_id}")
+async def get_latest_recommendations(
+    user_id: str,
+    user_id_obj: dict = Depends(verify_token)
+):
+    """Get the latest recommendations for a user"""
+    try:
+        # Import here to avoid circular imports
+        from activity_recommendation_service import ActivityRecommendationService
+        
+        # Initialize the service
+        recommendation_service = ActivityRecommendationService(supabase)
+        
+        # Get latest recommendations
+        result = recommendation_service.get_latest_recommendations(user_id)
+        
+        if result:
+            return JSONResponse({
+                "status": "success",
+                "user_id": user_id,
+                "date": result['date'],
+                "recommendations": result['recommendations'],
+                "generated_at": result['generated_at'],
+                "data_sources": result['data_sources']
+            })
+        else:
+            return JSONResponse({
+                "status": "success",
+                "user_id": user_id,
+                "message": "No recommendations found",
+                "recommendations": []
+            })
+            
+    except Exception as e:
+        print(f"❌ Error retrieving recommendations: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/recommendations/history/{user_id}")
+async def get_recommendations_history(
+    user_id: str,
+    limit: int = 7,
+    user_id_obj: dict = Depends(verify_token)
+):
+    """Get recommendations history for a user"""
+    try:
+        result = supabase.table('daily_recommendations')\
+            .select('*')\
+            .eq('id', user_id)\
+            .order('date', desc=True)\
+            .limit(limit)\
+            .execute()
+        
+        recommendations_history = []
+        if result.data:
+            for record in result.data:
+                recommendations_history.append({
+                    "date": record['date'],
+                    "recommendations": json.loads(record['recommendations']),
+                    "generated_at": record['generated_at'],
+                    "data_sources": json.loads(record.get('data_sources', '{}'))
+                })
+        
+        return JSONResponse({
+            "status": "success",
+            "user_id": user_id,
+            "history": recommendations_history,
+            "total": len(recommendations_history)
+        })
+        
+    except Exception as e:
+        print(f"❌ Error retrieving recommendations history: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+# ============================================
 # INFO ENDPOINTS
 # ============================================
 
@@ -1978,7 +2090,12 @@ async def api_info():
             "audio_analysis": "POST /api/analyze-audio",
             "photo_analysis": "POST /api/analyze-photo",
             "multimodal_analysis": "POST /api/analyze-multimodal",
-            "update_report": "POST /api/update-report"
+            "update_report": "POST /api/update-report",
+            "recommendations": {
+                "generate": "POST /api/recommendations/generate/{user_id} - Generate 5 activity recommendations",
+                "latest": "GET /api/recommendations/latest/{user_id} - Get latest recommendations",
+                "history": "GET /api/recommendations/history/{user_id} - Get recommendations history"
+            }
         },
         "models": {
             "preprocessor": "OpenAI Whisper (Audio Transcription + Emotion Detection)",
@@ -1992,7 +2109,12 @@ async def api_info():
             "Multimodal analysis",
             "User profile management",
             "Personalized recommendations",
-            "Report generation"
+            "Report generation",
+            "Daily activity recommendations (5 personalized suggestions)",
+            "Calendar integration",
+            "Location tracking",
+            "Push notifications",
+            "Stress tracking"
         ]
     }
 

@@ -1,15 +1,17 @@
 """
-Combined Scheduler Runner
-Runs calendar, location, and mood notification schedulers together
+Activity Recommendation Scheduler
+Daily 7 AM workflow for personalized activity recommendations
 
 Usage:
   python run_schedulers.py
 
-This will run all schedulers in the same process:
-- Calendar data fetch: 3:45 PM (15:45)
-- Location data analysis: 3:45 PM (15:45)
-- Morning mood notifications: 5:35 PM (17:35) - for testing
-- Evening mood notifications: 5:35 PM (17:35) - for testing
+This runs the complete 7 AM daily workflow:
+- Calendar data fetch & save ✅
+- Location summary creation ✅  
+- Push notification sent ✅
+- 5 Activity recommendations generated 🆕
+
+Based on collected data, generates 5 personalized activity recommendations using AI.
 """
 import os
 import time
@@ -21,6 +23,7 @@ from supabase import create_client
 from google_calendar_service import GoogleCalendarService
 from location_tracking_service import LocationTrackingService
 from push_notification_service import PushNotificationService
+from activity_recommendation_service import ActivityRecommendationService
 
 # Load environment variables
 load_dotenv()
@@ -47,6 +50,7 @@ supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 calendar_service = GoogleCalendarService(supabase)
 location_service = LocationTrackingService(supabase)
 notification_service = PushNotificationService(supabase)
+recommendation_service = ActivityRecommendationService(supabase)
 
 def fetch_calendar_for_all_users():
     """Fetch today's calendar data for all users with authorized calendar access"""
@@ -256,38 +260,89 @@ def send_mood_notifications():
         import traceback
         traceback.print_exc()
 
-def run_all_schedulers():
-    """Run calendar, location, and mood notification schedulers"""
+def generate_activity_recommendations():
+    """Generate 5 personalized activity recommendations for all users"""
     logger.info("="*70)
-    logger.info("COMBINED SCHEDULER STARTED")
+    logger.info("RUNNING SCHEDULED ACTIVITY RECOMMENDATIONS")
+    logger.info("="*70)
+    
+    try:
+        # Generate recommendations for all eligible users
+        result = recommendation_service.generate_recommendations_for_all_users()
+        
+        if result['status'] == 'success':
+            logger.info(f"✅ Activity recommendations generation completed")
+            logger.info(f"   Total users processed: {result['total_users']}")
+            logger.info(f"   Successful: {result['successful']}")
+            logger.info(f"   Failed: {result['failed']}")
+            
+            # Log details for each user
+            for user_result in result.get('results', []):
+                user_id = user_result.get('user_id', 'Unknown')
+                if user_result.get('status') == 'success':
+                    recommendations = user_result.get('recommendations', [])
+                    logger.info(f"   ✅ User {user_id}: {len(recommendations)} recommendations generated")
+                    
+                    # Log the recommendations briefly
+                    for i, rec in enumerate(recommendations[:3], 1):  # Show first 3
+                        logger.info(f"      {i}. {rec.get('title', 'Unknown')}")
+                    if len(recommendations) > 3:
+                        logger.info(f"      ... and {len(recommendations) - 3} more")
+                        
+                else:
+                    error_msg = user_result.get('message', 'Unknown error')
+                    logger.warning(f"   ⚠️ User {user_id}: {error_msg}")
+        else:
+            logger.error(f"❌ Activity recommendations generation failed: {result.get('message', 'Unknown error')}")
+        
+        logger.info("\n" + "="*70)
+        logger.info("ACTIVITY RECOMMENDATIONS SUMMARY:")
+        logger.info(f"  Total users: {result.get('total_users', 0)}")
+        logger.info(f"  Successful: {result.get('successful', 0)}")
+        logger.info(f"  Failed: {result.get('failed', 0)}")
+        logger.info("="*70 + "\n")
+        
+    except Exception as e:
+        logger.error(f"❌ Error during activity recommendations generation: {str(e)}")
+        import traceback
+        traceback.print_exc()
+
+def run_all_schedulers():
+    """Run calendar, location, mood notification, and activity recommendation schedulers"""
+    logger.info("="*70)
+    logger.info("ACTIVITY RECOMMENDATION SCHEDULER STARTED")
     logger.info("="*70)
     logger.info("Scheduled tasks:")
-    logger.info("  📅 Calendar fetch & backup: 7:00 PM (19:00)")
-    logger.info("  📍 Location analysis & summary: 7:00 PM (19:00)")
-    logger.info("  🔔 Mood notifications: 7:00 PM (19:00)")
+    logger.info("  📅 Calendar fetch & backup: 10:00 PM (22:00) - TESTING")
+    logger.info("  📍 Location analysis & summary: 10:00 PM (22:00) - TESTING")
+    logger.info("  🔔 Mood notifications: 10:00 PM (22:00) - TESTING")
+    logger.info("  🎯 Activity recommendations: 10:00 PM (22:00) - TESTING")
     logger.info("="*70)
     logger.info(f"Current time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
     
-    # Schedule ALL tasks at 7:00 PM
-    schedule.every().day.at("19:00").do(fetch_calendar_for_all_users)
-    schedule.every().day.at("19:00").do(analyze_locations_for_all_users)
-    schedule.every().day.at("19:00").do(send_mood_notifications)
+    # Schedule ALL tasks at 10:00 PM (for testing)
+    schedule.every().day.at("22:00").do(fetch_calendar_for_all_users)
+    schedule.every().day.at("22:00").do(analyze_locations_for_all_users)
+    schedule.every().day.at("22:00").do(send_mood_notifications)
+    schedule.every().day.at("22:00").do(generate_activity_recommendations)
     
     # Run immediately for testing (if current time is close to scheduled time)
     current_hour = datetime.now().hour
     current_minute = datetime.now().minute
     
-    # If it's close to 7:00 PM (within 10 minutes), run all tasks immediately
-    if current_hour == 19 and 0 <= current_minute <= 10:
-        logger.info("⏰ Current time is close to 7:00 PM, running all tasks immediately...\n")
+    # If it's close to 10:00 PM (within 10 minutes), run all tasks immediately
+    if current_hour == 22 and 0 <= current_minute <= 10:
+        logger.info("⏰ Current time is close to 10:00 PM, running all tasks immediately...\n")
         fetch_calendar_for_all_users()
         analyze_locations_for_all_users()
         send_mood_notifications()
-    elif current_hour == 18 and current_minute >= 50:
-        logger.info("⏰ Current time is close to 7:00 PM, running all tasks immediately...\n")
+        generate_activity_recommendations()
+    elif current_hour == 21 and current_minute >= 50:
+        logger.info("⏰ Current time is close to 10:00 PM, running all tasks immediately...\n")
         fetch_calendar_for_all_users()
         analyze_locations_for_all_users()
         send_mood_notifications()
+        generate_activity_recommendations()
     
     logger.info("Waiting for scheduled times...")
     logger.info("Press Ctrl+C to stop\n")
@@ -321,10 +376,10 @@ def run_all_schedulers():
 
 if __name__ == "__main__":
     print("\n" + "="*70)
-    print("COMBINED SCHEDULER")
+    print("ACTIVITY RECOMMENDATION SCHEDULER")
     print("="*70)
     print("\nOptions:")
-    print("1. Run one-time tasks now (calendar + location + notifications)")
+    print("1. Run one-time tasks now (calendar + location + notifications + recommendations)")
     print("2. Run continuous scheduler (runs daily at scheduled times)")
     print("3. Test: Run all tasks now + start scheduler")
     print("="*70)
@@ -340,12 +395,14 @@ if __name__ == "__main__":
         fetch_calendar_for_all_users()
         analyze_locations_for_all_users()
         send_mood_notifications()
+        generate_activity_recommendations()
     elif choice == "2":
         print("\nStarting continuous scheduler...")
         print("All tasks will run at:")
-        print("  - Calendar fetch & backup: 7:00 PM (19:00)")
-        print("  - Location analysis & summary: 7:00 PM (19:00)")
-        print("  - Mood notifications: 7:00 PM (19:00)")
+        print("  - Calendar fetch & backup: 10:00 PM (22:00) - TESTING")
+        print("  - Location analysis & summary: 10:00 PM (22:00) - TESTING")
+        print("  - Mood notifications: 10:00 PM (22:00) - TESTING")
+        print("  - Activity recommendations: 10:00 PM (22:00) - TESTING")
         print("\n⚠️  IMPORTANT: The scheduler must be running at the scheduled times!")
         print("   If you start it after the scheduled time, tasks will run tomorrow.")
         print("\nPress Ctrl+C to stop\n")
@@ -361,13 +418,15 @@ if __name__ == "__main__":
         fetch_calendar_for_all_users()
         analyze_locations_for_all_users()
         send_mood_notifications()
+        generate_activity_recommendations()
         print("\n" + "="*70)
         print("STARTING CONTINUOUS SCHEDULER")
         print("="*70)
         print("\nAll tasks will run at:")
-        print("  - Calendar fetch & backup: 7:00 PM (19:00)")
-        print("  - Location analysis & summary: 7:00 PM (19:00)")
-        print("  - Mood notifications: 7:00 PM (19:00)")
+        print("  - Calendar fetch & backup: 10:00 PM (22:00) - TESTING")
+        print("  - Location analysis & summary: 10:00 PM (22:00) - TESTING")
+        print("  - Mood notifications: 10:00 PM (22:00) - TESTING")
+        print("  - Activity recommendations: 10:00 PM (22:00) - TESTING")
         print("\nPress Ctrl+C to stop\n")
         try:
             run_all_schedulers()
@@ -378,4 +437,5 @@ if __name__ == "__main__":
         fetch_calendar_for_all_users()
         analyze_locations_for_all_users()
         send_mood_notifications()
+        generate_activity_recommendations()
 
