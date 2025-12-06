@@ -1,4 +1,4 @@
-name: Daily 12:30 AM Scheduler
+name: Daily 7:00 PM Scheduler
 
 on:
   schedule:
