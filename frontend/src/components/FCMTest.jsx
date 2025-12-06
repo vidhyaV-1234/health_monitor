@@ -1,36 +1,54 @@
 import { useState } from 'react';
 import { getFCMToken } from '../firebase-config';
-import { debugFCM } from '../utils/fcm-debug';
+import { simpleFCMTest } from '../utils/fcm-simple-test';
 
 export default function FCMTest() {
   const [token, setToken] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [debugInfo, setDebugInfo] = useState([]);
 
   const testFCMToken = async () => {
     setLoading(true);
     setError(null);
     setToken(null);
+    setDebugInfo([]);
+
+    // Capture console logs
+    const logs = [];
+    const originalLog = console.log;
+    const originalError = console.error;
+    
+    console.log = (...args) => {
+      logs.push({ type: 'log', message: args.join(' ') });
+      originalLog(...args);
+    };
+    
+    console.error = (...args) => {
+      logs.push({ type: 'error', message: args.join(' ') });
+      originalError(...args);
+    };
 
     try {
-      console.log('🧪 Starting FCM test...');
+      console.log('🧪 Starting comprehensive FCM test...');
       
-      // Run debug first
-      await debugFCM();
+      // Run simple test first
+      const result = await simpleFCMTest();
       
-      // Try to get token
-      const fcmToken = await getFCMToken();
-      
-      if (fcmToken) {
-        setToken(fcmToken);
+      if (result && typeof result === 'string') {
+        setToken(result);
         console.log('✅ FCM Test successful!');
       } else {
-        setError('No FCM token received. Check Firebase configuration.');
+        setError('FCM token generation failed. Check console for details.');
       }
     } catch (err) {
       console.error('❌ FCM Test failed:', err);
       setError(err.message);
     } finally {
+      // Restore console
+      console.log = originalLog;
+      console.error = originalError;
+      setDebugInfo(logs);
       setLoading(false);
     }
   };
@@ -95,13 +113,28 @@ export default function FCMTest() {
           </div>
         )}
 
+        {debugInfo.length > 0 && (
+          <div className="p-3 bg-gray-50 border border-gray-200 rounded-lg">
+            <h4 className="font-semibold text-gray-800 mb-2">🔍 Debug Log</h4>
+            <div className="max-h-60 overflow-y-auto space-y-1">
+              {debugInfo.map((log, index) => (
+                <div key={index} className={`text-xs font-mono p-1 rounded ${
+                  log.type === 'error' ? 'bg-red-100 text-red-700' : 'bg-white text-gray-700'
+                }`}>
+                  {log.message}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg">
           <h4 className="font-semibold text-blue-800 mb-2">💡 Debug Info</h4>
           <p className="text-sm text-blue-700 mb-2">
             Open browser console (F12) to see detailed debug information when testing.
           </p>
           <p className="text-xs text-blue-600">
-            You can also run <code className="bg-white px-1 rounded">window.debugFCM()</code> in the console anytime.
+            You can also run <code className="bg-white px-1 rounded">window.simpleFCMTest()</code> in the console anytime.
           </p>
         </div>
       </div>

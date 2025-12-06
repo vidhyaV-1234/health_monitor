@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FCM Test</title>
+    <style>
+        body { font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; }
+        .status { padding: 10px; margin: 10px 0; border-radius: 5px; }
+        .success { background: #d4edda; border: 1px solid #c3e6cb; color: #155724; }
+        .error { background: #f8d7da; border: 1px solid #f5c6cb; color: #721c24; }
+        .info { background: #d1ecf1; border: 1px solid #bee5eb; color: #0c5460; }
+        button { padding: 10px 20px; background: #007bff; color: white; border: none; border-radius: 5px; cursor: pointer; }
+        button:hover { background: #0056b3; }
+        button:disabled { background: #6c757d; cursor: not-allowed; }
+        .token { word-break: break-all; font-family: monospace; font-size: 12px; background: #f8f9fa; padding: 10px; border-radius: 3px; }
+    </style>
+</head>
+<body>
+    <h1>🧪 FCM Token Test</h1>
+    <p>This page tests Firebase Cloud Messaging token generation outside of React.</p>
+    
+    <button id="testBtn" onclick="testFCM()">Test FCM Token Generation</button>
+    
+    <div id="results"></div>
+
+    <script type="module">
+        // Firebase configuration
+        const firebaseConfig = {
+            apiKey: "AIzaSyDiCnVbc-lyd-dQS2MTdMrZ26z_dxj_J1I",
+            authDomain: "wellness-coach-d3422.firebaseapp.com",
+            projectId: "wellness-coach-d3422",
+            storageBucket: "wellness-coach-d3422.firebasestorage.app",
+            messagingSenderId: "789661249074",
+            appId: "1:789661249074:web:885ac20d5dd162d167962b",
+            measurementId: "G-SRJ1G7G7B8"
+        };
+
+        const vapidKey = "BGAp_jqHOUQB0TDMNJz1g6NqhqUhbNuE6iK8yb0ls9xeQmdaxs3raNNhFjDmiJF52l8c8wuW8-FsfVhXroKTeMg";
+
+        let app, messaging;
+
+        async function initFirebase() {
+            try {
+                const { initializeApp } = await import('https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js');
+                const { getMessaging, getToken, isSupported } = await import('https://www.gstatic.com/firebasejs/10.7.1/firebase-messaging.js');
+                
+                // Check if messaging is supported
+                const supported = await isSupported();
+                if (!supported) {
+                    throw new Error('Firebase Messaging is not supported in this browser');
+                }
+                
+                app = initializeApp(firebaseConfig);
+                messaging = getMessaging(app);
+                
+                return true;
+            } catch (error) {
+                console.error('Firebase initialization failed:', error);
+                return false;
+            }
+        }
+
+        async function registerServiceWorker() {
+            if (!('serviceWorker' in navigator)) {
+                throw new Error('Service Worker not supported');
+            }
+
+            try {
+                let registration = await navigator.serviceWorker.getRegistration();
+                
+                if (!registration) {
+                    registration = await navigator.serviceWorker.register('/firebase-messaging-sw.js');
+                    console.log('Service worker registered');
+                }
+                
+                await navigator.serviceWorker.ready;
+                return registration;
+            } catch (error) {
+                console.error('Service worker registration failed:', error);
+                throw error;
+            }
+        }
+
+        async function testFCM() {
+            const resultsDiv = document.getElementById('results');
+            const testBtn = document.getElementById('testBtn');
+            
+            testBtn.disabled = true;
+            resultsDiv.innerHTML = '<div class="info">🔄 Testing FCM...</div>';
+
+            try {
+                // Step 1: Check environment
+                resultsDiv.innerHTML += '<div class="info">1️⃣ Checking environment...</div>';
+                
+                if (location.protocol !== 'https:' && location.hostname !== 'localhost') {
+                    throw new Error('FCM requires HTTPS or localhost');
+                }
+
+                // Step 2: Request notification permission
+                resultsDiv.innerHTML += '<div class="info">2️⃣ Requesting notification permission...</div>';
+                
+                const permission = await Notification.requestPermission();
+                if (permission !== 'granted') {
+                    throw new Error('Notification permission denied');
+                }
+
+                // Step 3: Register service worker
+                resultsDiv.innerHTML += '<div class="info">3️⃣ Registering service worker...</div>';
+                await registerServiceWorker();
+
+                // Step 4: Initialize Firebase
+                resultsDiv.innerHTML += '<div class="info">4️⃣ Initializing Firebase...</div>';
+                const firebaseReady = await initFirebase();
+                if (!firebaseReady) {
+                    throw new Error('Firebase initialization failed');
+                }
+
+                // Step 5: Get FCM token
+                resultsDiv.innerHTML += '<div class="info">5️⃣ Generating FCM token...</div>';
+                
+                const { getToken } = await import('https://www.gstatic.com/firebasejs/10.7.1/firebase-messaging.js');
+                
+                const token = await getToken(messaging, { vapidKey });
+
+                if (token) {
+                    resultsDiv.innerHTML += `
+                        <div class="success">
+                            ✅ FCM Token generated successfully!<br>
+                            <strong>Length:</strong> ${token.length} characters<br>
+                            <strong>Token:</strong><br>
+                            <div class="token">${token}</div>
+                        </div>
+                    `;
+                } else {
+                    throw new Error('No FCM token received');
+                }
+
+            } catch (error) {
+                resultsDiv.innerHTML += `<div class="error">❌ Error: ${error.message}</div>`;
+                console.error('FCM test failed:', error);
+            } finally {
+                testBtn.disabled = false;
+            }
+        }
+
+        // Make testFCM available globally
+        window.testFCM = testFCM;
+    </script>
+</body>
+</html>

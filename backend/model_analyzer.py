@@ -512,6 +512,12 @@ Mood: [Sad/Neutral/Angry/Happy/Fear/Surprise/Disgust], stress_level: [0-5]
             error_msg = e.response['Error']['Message']
             print(f"❌ AWS Error: {error_code}")
             print(f"Message: {error_msg}")
+            
+            # If it's a credentials issue, return a neutral response instead of failing
+            if 'token' in error_msg.lower() or 'credentials' in error_msg.lower() or 'unauthorized' in error_msg.lower():
+                print("⚠️ AWS credentials issue detected, returning neutral mood analysis")
+                return "Mood: Neutral, stress_level: 0\nNote: AWS credentials need to be refreshed for AI analysis"
+            
             return f"Mood: Neutral, stress_level: 0\nError: {error_msg}"
         except Exception as e:
             print(f"❌ Unexpected error: {str(e)}")

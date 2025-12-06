@@ -2,6 +2,8 @@
 importScripts('https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js');
 importScripts('https://www.gstatic.com/firebasejs/10.7.1/firebase-messaging-compat.js');
 
+console.log('🔧 Firebase service worker loaded');
+
 // Firebase configuration for service worker (must match your project)
 const firebaseConfig = {
   apiKey: "AIzaSyDiCnVbc-lyd-dQS2MTdMrZ26z_dxj_J1I",
@@ -14,10 +16,20 @@ const firebaseConfig = {
 };
 
 // Initialize Firebase
-firebase.initializeApp(firebaseConfig);
+try {
+  firebase.initializeApp(firebaseConfig);
+  console.log('✅ Firebase initialized in service worker');
+} catch (error) {
+  console.error('❌ Firebase initialization failed in service worker:', error);
+}
 
 // Retrieve Firebase Messaging object
-const messaging = firebase.messaging();
+try {
+  const messaging = firebase.messaging();
+  console.log('✅ Firebase messaging initialized in service worker');
+} catch (error) {
+  console.error('❌ Firebase messaging initialization failed in service worker:', error);
+}
 
 // Handle background messages
 messaging.onBackgroundMessage((payload) => {

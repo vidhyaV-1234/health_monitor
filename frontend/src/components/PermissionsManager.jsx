@@ -477,18 +477,7 @@ export default function PermissionsManager({ userId }) {
         </div>
       </div>
 
-      {/* Info Box */}
-      <div className="mt-6 p-4 bg-blue-50 rounded-xl border border-blue-200">
-        <h4 className="font-semibold text-blue-900 mb-2 flex items-center">
-          <span className="mr-2">💡</span>
-          How These Permissions Help
-        </h4>
-        <ul className="text-sm text-blue-800 space-y-1">
-          <li>• <strong>Location:</strong> Suggests activities based on where you are (home, office, gym)</li>
-          <li>• <strong>Notifications:</strong> Quick mood check-ins without opening the app</li>
-          <li>• <strong>Calendar:</strong> Recommends activities that fit your actual free time</li>
-        </ul>
-      </div>
+
 
       {/* Location Tracking Status */}
       {tracking.locationEnabled && (

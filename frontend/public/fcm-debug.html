@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FCM Debug Tool</title>
+    <style>
+        body { 
+            font-family: Arial, sans-serif; 
+            max-width: 1000px; 
+            margin: 0 auto; 
+            padding: 20px; 
+            background: #f5f5f5;
+        }
+        .container { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        .status { padding: 12px; margin: 10px 0; border-radius: 6px; border-left: 4px solid; }
+        .success { background: #d4edda; border-color: #28a745; color: #155724; }
+        .error { background: #f8d7da; border-color: #dc3545; color: #721c24; }
+        .warning { background: #fff3cd; border-color: #ffc107; color: #856404; }
+        .info { background: #d1ecf1; border-color: #17a2b8; color: #0c5460; }
+        button { 
+            padding: 12px 24px; 
+            background: #007bff; 
+            color: white; 
+            border: none; 
+            border-radius: 6px; 
+            cursor: pointer; 
+            margin: 5px;
+            font-size: 14px;
+        }
+        button:hover { background: #0056b3; }
+        button:disabled { background: #6c757d; cursor: not-allowed; }
+        .token { 
+            word-break: break-all; 
+            font-family: 'Courier New', monospace; 
+            font-size: 11px; 
+            background: #f8f9fa; 
+            padding: 12px; 
+            border-radius: 4px; 
+            border: 1px solid #dee2e6;
+            max-height: 100px;
+            overflow-y: auto;
+        }
+        .step { margin: 15px 0; padding: 10px; border: 1px solid #ddd; border-radius: 4px; }
+        .step-title { font-weight: bold; margin-bottom: 8px; }
+        .log { 
+            background: #f8f9fa; 
+            border: 1px solid #dee2e6; 
+            border-radius: 4px; 
+            padding: 10px; 
+            max-height: 300px; 
+            overflow-y: auto; 
+            font-family: 'Courier New', monospace; 
+            font-size: 12px;
+            white-space: pre-wrap;
+        }
+        .progress { width: 100%; background: #e9ecef; border-radius: 4px; height: 8px; margin: 10px 0; }
+        .progress-bar { height: 100%; background: #007bff; border-radius: 4px; transition: width 0.3s; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔧 FCM Debug Tool</h1>
+        <p>This tool helps debug Firebase Cloud Messaging (FCM) token generation issues.</p>
+        
+        <div style="margin: 20px 0;">
+            <button onclick="runFullTest()">🧪 Run Full FCM Test</button>
+            <button onclick="testServiceWorker()">⚙️ Test Service Worker</button>
+            <button onclick="testFirebaseConfig()">🔥 Test Firebase Config</button>
+            <button onclick="clearLogs()">🗑️ Clear Logs</button>
+        </div>
+
+        <div class="progress">
+            <div class="progress-bar" id="progressBar" style="width: 0%"></div>
+        </div>
+        
+        <div id="results"></div>
+        
+        <div class="step">
+            <div class="step-title">📋 Debug Log</div>
+            <div class="log" id="debugLog"></div>
+        </div>
+    </div>
+
+    <script type="module">
+        // Firebase configuration
+        const firebaseConfig = {
+            apiKey: "AIzaSyDiCnVbc-lyd-dQS2MTdMrZ26z_dxj_J1I",
+            authDomain: "wellness-coach-d3422.firebaseapp.com",
+            projectId: "wellness-coach-d3422",
+            storageBucket: "wellness-coach-d3422.firebasestorage.app",
+            messagingSenderId: "789661249074",
+            appId: "1:789661249074:web:885ac20d5dd162d167962b",
+            measurementId: "G-SRJ1G7G7B8"
+        };
+
+        const vapidKey = "BGAp_jqHOUQB0TDMNJz1g6NqhqUhbNuE6iK8yb0ls9xeQmdaxs3raNNhFjDmiJF52l8c8wuW8-FsfVhXroKTeMg";
+
+        let app, messaging;
+        const debugLog = document.getElementById('debugLog');
+        const resultsDiv = document.getElementById('results');
+        const progressBar = document.getElementById('progressBar');
+
+        function log(message, type = 'info') {
+            const timestamp = new Date().toLocaleTimeString();
+            const logEntry = `[${timestamp}] ${message}\n`;
+            debugLog.textContent += logEntry;
+            debugLog.scrollTop = debugLog.scrollHeight;
+            console.log(message);
+        }
+
+        function showResult(message, type = 'info') {
+            const div = document.createElement('div');
+            div.className = `status ${type}`;
+            div.innerHTML = message;
+            resultsDiv.appendChild(div);
+        }
+
+        function updateProgress(percent) {
+            progressBar.style.width = percent + '%';
+        }
+
+        function clearLogs() {
+            debugLog.textContent = '';
+            resultsDiv.innerHTML = '';
+            updateProgress(0);
+        }
+
+        async function testServiceWorker() {
+            log('🔧 Testing Service Worker...');
+            clearResults();
+            
+            try {
+                if (!('serviceWorker' in navigator)) {
+                    throw new Error('Service Worker not supported');
+                }
+
+                log('✅ Service Worker API supported');
+                
+                // Check if service worker is already registered
+                let registration = await navigator.serviceWorker.getRegistration();
+                
+                if (registration) {
+                    log(`✅ Service Worker already registered: ${registration.scope}`);
+                    log(`   State: ${registration.active?.state || 'unknown'}`);
+                } else {
+                    log('🔄 Registering service worker...');
+                    registration = await navigator.serviceWorker.register('/firebase-messaging-sw.js');
+                    log('✅ Service Worker registered successfully');
+                }
+
+                // Wait for service worker to be ready
+                await navigator.serviceWorker.ready;
+                log('✅ Service Worker is ready');
+                
+                showResult('✅ Service Worker test passed', 'success');
+                
+            } catch (error) {
+                log(`❌ Service Worker test failed: ${error.message}`);
+                showResult(`❌ Service Worker Error: ${error.message}`, 'error');
+            }
+        }
+
+        async function testFirebaseConfig() {
+            log('🔥 Testing Firebase Configuration...');
+            clearResults();
+            
+            try {
+                // Test Firebase imports
+                log('🔄 Importing Firebase modules...');
+                const { initializeApp } = await import('https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js');
+                const { getMessaging, getToken, isSupported } = await import('https://www.gstatic.com/firebasejs/10.7.1/firebase-messaging.js');
+                log('✅ Firebase modules imported successfully');
+
+                // Check if messaging is supported
+                const supported = await isSupported();
+                log(`📱 Firebase Messaging supported: ${supported}`);
+                
+                if (!supported) {
+                    throw new Error('Firebase Messaging not supported in this browser');
+                }
+
+                // Initialize Firebase
+                log('🔄 Initializing Firebase...');
+                app = initializeApp(firebaseConfig);
+                log('✅ Firebase app initialized');
+
+                // Initialize messaging
+                log('🔄 Initializing Firebase Messaging...');
+                messaging = getMessaging(app);
+                log('✅ Firebase Messaging initialized');
+
+                // Validate VAPID key
+                log('🔑 Validating VAPID key...');
+                if (!vapidKey || !vapidKey.startsWith('B') || vapidKey.length < 80) {
+                    throw new Error('Invalid VAPID key format');
+                }
+                log(`✅ VAPID key format valid: ${vapidKey.substring(0, 20)}...`);
+
+                showResult('✅ Firebase configuration test passed', 'success');
+                
+            } catch (error) {
+                log(`❌ Firebase configuration test failed: ${error.message}`);
+                showResult(`❌ Firebase Error: ${error.message}`, 'error');
+            }
+        }
+
+        async function runFullTest() {
+            log('🧪 Starting Full FCM Test...');
+            clearResults();
+            updateProgress(0);
+
+            try {
+                // Step 1: Environment check (10%)
+                log('1️⃣ Checking environment...');
+                updateProgress(10);
+                
+                if (location.protocol !== 'https:' && location.hostname !== 'localhost') {
+                    throw new Error('FCM requires HTTPS or localhost');
+                }
+                log('✅ Environment check passed');
+
+                // Step 2: Service Worker test (30%)
+                log('2️⃣ Testing Service Worker...');
+                updateProgress(30);
+                await testServiceWorker();
+
+                // Step 3: Firebase configuration test (50%)
+                log('3️⃣ Testing Firebase configuration...');
+                updateProgress(50);
+                await testFirebaseConfig();
+
+                // Step 4: Request notification permission (70%)
+                log('4️⃣ Requesting notification permission...');
+                updateProgress(70);
+                
+                const permission = await Notification.requestPermission();
+                log(`📋 Permission result: ${permission}`);
+                
+                if (permission !== 'granted') {
+                    throw new Error('Notification permission denied');
+                }
+                log('✅ Notification permission granted');
+
+                // Step 5: Generate FCM token (90%)
+                log('5️⃣ Generating FCM token...');
+                updateProgress(90);
+                
+                const { getToken } = await import('https://www.gstatic.com/firebasejs/10.7.1/firebase-messaging.js');
+                
+                const token = await getToken(messaging, { vapidKey });
+
+                if (token) {
+                    log('✅ FCM Token generated successfully!');
+                    log(`📝 Token length: ${token.length} characters`);
+                    log(`📝 Token preview: ${token.substring(0, 50)}...`);
+                    
+                    showResult(`
+                        ✅ <strong>FCM Test Successful!</strong><br>
+                        Token Length: ${token.length} characters<br>
+                        <strong>Full Token:</strong><br>
+                        <div class="token">${token}</div>
+                    `, 'success');
+                    
+                    updateProgress(100);
+                } else {
+                    throw new Error('No FCM token received');
+                }
+
+            } catch (error) {
+                log(`❌ Full test failed: ${error.message}`);
+                showResult(`❌ <strong>Test Failed:</strong> ${error.message}`, 'error');
+                
+                // Provide troubleshooting tips
+                let tips = '<br><strong>Troubleshooting Tips:</strong><ul>';
+                
+                if (error.message.includes('permission')) {
+                    tips += '<li>Allow notifications in browser settings</li>';
+                }
+                if (error.message.includes('Service Worker')) {
+                    tips += '<li>Check if firebase-messaging-sw.js exists in public folder</li>';
+                }
+                if (error.message.includes('VAPID')) {
+                    tips += '<li>Verify VAPID key in Firebase Console > Cloud Messaging</li>';
+                }
+                if (error.message.includes('Firebase')) {
+                    tips += '<li>Check Firebase project configuration</li>';
+                }
+                
+                tips += '</ul>';
+                showResult(tips, 'warning');
+            }
+        }
+
+        function clearResults() {
+            resultsDiv.innerHTML = '';
+        }
+
+        // Make functions available globally
+        window.runFullTest = runFullTest;
+        window.testServiceWorker = testServiceWorker;
+        window.testFirebaseConfig = testFirebaseConfig;
+        window.clearLogs = clearLogs;
+
+        // Auto-run basic checks on page load
+        window.addEventListener('load', () => {
+            log('🚀 FCM Debug Tool loaded');
+            log('💡 Click "Run Full FCM Test" to start debugging');
+        });
+    </script>
+</body>
+</html>
