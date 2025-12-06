@@ -17,10 +17,7 @@ export default function PermissionsManager({ userId }) {
     calendarConnected: false
   });
 
-  const [locationData, setLocationData] = useState(null);
-  const [showLocationData, setShowLocationData] = useState(false);
   const [showLocationManager, setShowLocationManager] = useState(false);
-  const [currentLocationLabel, setCurrentLocationLabel] = useState(null);
 
   const token = localStorage.getItem("token");
 
@@ -188,20 +185,6 @@ export default function PermissionsManager({ userId }) {
             lng: position.coords.longitude,
             response: response.data
           });
-          
-          // Get the most recent tracked location to show label
-          try {
-            const trackedResponse = await axios.get(
-              `${API_BASE_URL}/api/location/summary/${userId}`,
-              { headers: { Authorization: `Bearer ${token}` }}
-            );
-            
-            if (trackedResponse.data && trackedResponse.data.current_location) {
-              setCurrentLocationLabel(trackedResponse.data.current_location);
-            }
-          } catch (err) {
-            console.log('ℹ️ Could not get location label:', err.message);
-          }
         } catch (error) {
           console.error('❌ Error tracking location:', error);
           console.error('Error details:', error.response?.data || error.message);
@@ -342,22 +325,6 @@ export default function PermissionsManager({ userId }) {
     }
   };
 
-  // View Location Data
-  const viewLocationData = async () => {
-    try {
-      const response = await axios.get(
-        `${API_BASE_URL}/api/location/summary/${userId}`,
-        { headers: { Authorization: `Bearer ${token}` }}
-      );
-      
-      setLocationData(response.data);
-      setShowLocationData(true);
-    } catch (error) {
-      console.error('Error fetching location data:', error);
-      alert('No location data found yet. Keep the app open for a while to collect data.');
-    }
-  };
-
   return (
     <div className="bg-white rounded-2xl shadow-lg p-6 mb-6">
       <h3 className="text-2xl font-bold mb-4 flex items-center text-gray-900">
@@ -476,98 +443,6 @@ export default function PermissionsManager({ userId }) {
           </div>
         </div>
       </div>
-
-      {/* Info Box */}
-      <div className="mt-6 p-4 bg-blue-50 rounded-xl border border-blue-200">
-        <h4 className="font-semibold text-blue-900 mb-2 flex items-center">
-          <span className="mr-2">💡</span>
-          How These Permissions Help
-        </h4>
-        <ul className="text-sm text-blue-800 space-y-1">
-          <li>• <strong>Location:</strong> Suggests activities based on where you are (home, office, gym)</li>
-          <li>• <strong>Notifications:</strong> Quick mood check-ins without opening the app</li>
-          <li>• <strong>Calendar:</strong> Recommends activities that fit your actual free time</li>
-        </ul>
-      </div>
-
-      {/* Location Tracking Status */}
-      {tracking.locationEnabled && (
-        <div className="mt-4 p-4 bg-green-50 rounded-xl border border-green-200">
-          <div className="flex items-start justify-between">
-            <div className="flex-1">
-              <h4 className="font-semibold text-green-900 mb-2 flex items-center">
-                <span className="mr-2">📍</span>
-                Location Tracking Active
-              </h4>
-              <div className="text-sm text-green-800 space-y-1">
-                <div className="flex items-center space-x-2">
-                  <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
-                  <span>Your location is being tracked every 2 minutes</span>
-                </div>
-                {currentLocationLabel && (
-                  <div className="flex items-center space-x-2 mt-2 p-2 bg-white rounded-lg">
-                    <span className="text-lg">{
-                      currentLocationLabel.type === 'home' ? '🏠' : 
-                      currentLocationLabel.type === 'office' ? '💼' :
-                      currentLocationLabel.type === 'school' ? '🎓' :
-                      currentLocationLabel.type === 'university' ? '🏫' :
-                      currentLocationLabel.type === 'gym' ? '💪' :
-                      currentLocationLabel.type === 'library' ? '📚' :
-                      currentLocationLabel.type === 'mall' ? '🛍️' :
-                      currentLocationLabel.type === 'restaurant' ? '🍽️' :
-                      currentLocationLabel.type === 'cafe' ? '☕' :
-                      currentLocationLabel.type === 'park' ? '🌳' :
-                      currentLocationLabel.type === 'hospital' ? '🏥' :
-                      currentLocationLabel.type === 'station' ? '🚉' :
-                      currentLocationLabel.type === 'airport' ? '✈️' :
-                      currentLocationLabel.type === 'hotel' ? '🏨' :
-                      currentLocationLabel.type === 'friend' ? '👥' :
-                      currentLocationLabel.type === 'relative' ? '👨‍👩‍👧' :
-                      '📍'
-                    }</span>
-                    <span className="font-medium text-gray-900">
-                      Currently at: {currentLocationLabel.name || currentLocationLabel.type}
-                    </span>
-                  </div>
-                )}
-                <div className="text-xs text-green-700 mt-2">
-                  • Location data helps suggest activities based on where you are
-                  • All data is private and only used for your recommendations
-                  • Keep this tab open for continuous tracking
-                </div>
-              </div>
-            </div>
-            <button
-              onClick={viewLocationData}
-              className="ml-4 px-3 py-1 bg-green-600 text-white text-sm rounded-lg hover:bg-green-700 transition-colors whitespace-nowrap"
-            >
-              View Data
-            </button>
-          </div>
-
-          {/* Location Data Modal */}
-          {showLocationData && locationData && (
-            <div className="mt-4 p-3 bg-white rounded-lg border border-green-300">
-              <div className="flex items-center justify-between mb-2">
-                <h5 className="font-semibold text-gray-900">Today's Location Summary</h5>
-                <button
-                  onClick={() => setShowLocationData(false)}
-                  className="text-gray-500 hover:text-gray-700"
-                >
-                  ✕
-                </button>
-              </div>
-              <div className="text-sm text-gray-700 space-y-1">
-                {locationData.summary ? (
-                  <pre className="whitespace-pre-wrap">{locationData.summary}</pre>
-                ) : (
-                  <p className="text-gray-500 italic">No location data collected yet. Keep tracking enabled!</p>
-                )}
-              </div>
-            </div>
-          )}
-        </div>
-      )}
 
       {/* Notification Schedule Info */}
       {tracking.notificationsEnabled && (
