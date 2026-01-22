@@ -196,10 +196,10 @@ def analyze_locations_for_all_users():
         import traceback
         traceback.print_exc()
 
-def send_mood_notifications():
-    """Send mood check notifications to all users"""
+def send_morning_notifications():
+    """Send morning mood check notifications to all users"""
     logger.info("="*70)
-    logger.info("RUNNING SCHEDULED MOOD NOTIFICATIONS")
+    logger.info("RUNNING MORNING MOOD NOTIFICATIONS (7 AM)")
     logger.info("="*70)
     
     try:
@@ -220,7 +220,7 @@ def send_mood_notifications():
         failed_count = 0
         
         logger.info(f"Found {total_users} user(s) with notifications enabled")
-        logger.info("Sending mood notifications...\n")
+        logger.info("Sending morning mood notifications...\n")
         
         for user_record in result.data:
             user_id = str(user_record.get("id"))
@@ -228,17 +228,11 @@ def send_mood_notifications():
                 continue
             
             try:
-                # Determine if morning or evening based on hour
-                current_hour = datetime.now().hour
-                if current_hour < 12:
-                    logger.info(f"☀️ Sending morning notification to user {user_id}...")
-                    response = notification_service.send_morning_notification(user_id)
-                else:
-                    logger.info(f"🌙 Sending evening notification to user {user_id}...")
-                    response = notification_service.send_evening_notification(user_id)
+                logger.info(f"☀️ Sending morning notification to user {user_id}...")
+                response = notification_service.send_morning_notification(user_id)
                 
                 if response:
-                    logger.info(f"✅ Notification sent to user {user_id}")
+                    logger.info(f"✅ Morning notification sent to user {user_id}")
                     sent_count += 1
                 else:
                     logger.warning(f"⚠️ Failed to send to user {user_id}")
@@ -249,14 +243,72 @@ def send_mood_notifications():
                 failed_count += 1
         
         logger.info("\n" + "="*70)
-        logger.info("MOOD NOTIFICATIONS SUMMARY:")
+        logger.info("MORNING NOTIFICATIONS SUMMARY:")
         logger.info(f"  Total users: {total_users}")
         logger.info(f"  Sent: {sent_count}")
         logger.info(f"  Failed: {failed_count}")
         logger.info("="*70 + "\n")
         
     except Exception as e:
-        logger.error(f"❌ Error during mood notifications: {str(e)}")
+        logger.error(f"❌ Error during morning notifications: {str(e)}")
+        import traceback
+        traceback.print_exc()
+
+def send_evening_notifications():
+    """Send evening mood check notifications to all users"""
+    logger.info("="*70)
+    logger.info("RUNNING EVENING MOOD NOTIFICATIONS (7 PM)")
+    logger.info("="*70)
+    
+    try:
+        # Get all users with notifications enabled
+        result = supabase.table("push_notification_settings")\
+            .select("id, fcm_token")\
+            .eq("notifications_enabled", True)\
+            .not_.is_("fcm_token", "null")\
+            .execute()
+        
+        if not result.data:
+            logger.info("No users with notifications enabled")
+            logger.info("="*70 + "\n")
+            return
+        
+        total_users = len(result.data)
+        sent_count = 0
+        failed_count = 0
+        
+        logger.info(f"Found {total_users} user(s) with notifications enabled")
+        logger.info("Sending evening mood notifications...\n")
+        
+        for user_record in result.data:
+            user_id = str(user_record.get("id"))
+            if not user_id:
+                continue
+            
+            try:
+                logger.info(f"🌙 Sending evening notification to user {user_id}...")
+                response = notification_service.send_evening_notification(user_id)
+                
+                if response:
+                    logger.info(f"✅ Evening notification sent to user {user_id}")
+                    sent_count += 1
+                else:
+                    logger.warning(f"⚠️ Failed to send to user {user_id}")
+                    failed_count += 1
+                    
+            except Exception as user_error:
+                logger.error(f"❌ Error sending to user {user_id}: {str(user_error)}")
+                failed_count += 1
+        
+        logger.info("\n" + "="*70)
+        logger.info("EVENING NOTIFICATIONS SUMMARY:")
+        logger.info(f"  Total users: {total_users}")
+        logger.info(f"  Sent: {sent_count}")
+        logger.info(f"  Failed: {failed_count}")
+        logger.info("="*70 + "\n")
+        
+    except Exception as e:
+        logger.error(f"❌ Error during evening notifications: {str(e)}")
         import traceback
         traceback.print_exc()
 
@@ -307,36 +359,99 @@ def generate_activity_recommendations():
         import traceback
         traceback.print_exc()
 
+def run_morning_workflow():
+    """Run morning workflow: Calendar fetch, location analysis, morning notifications, recommendations"""
+    logger.info("="*70)
+    logger.info("MORNING WORKFLOW (7 AM)")
+    logger.info("="*70)
+    logger.info("Tasks:")
+    logger.info("  1. 📅 Fetch calendar data for today & tomorrow")
+    logger.info("  2. 📍 Analyze location data from yesterday")
+    logger.info("  3. 🔔 Send morning mood check notifications")
+    logger.info("  4. 🎯 Generate activity recommendations")
+    logger.info("="*70)
+    logger.info(f"Current time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+    
+    try:
+        # Step 1: Fetch calendar data
+        logger.info("STEP 1: Fetching calendar data...")
+        fetch_calendar_for_all_users()
+        
+        # Step 2: Analyze location data
+        logger.info("\nSTEP 2: Analyzing location data...")
+        analyze_locations_for_all_users()
+        
+        # Step 3: Send morning notifications
+        logger.info("\nSTEP 3: Sending morning notifications...")
+        send_morning_notifications()
+        
+        # Step 4: Generate recommendations (after data collection)
+        logger.info("\nSTEP 4: Generating activity recommendations...")
+        generate_activity_recommendations()
+        
+        logger.info("\n" + "="*70)
+        logger.info("✅ MORNING WORKFLOW COMPLETED SUCCESSFULLY")
+        logger.info("="*70)
+        
+    except Exception as e:
+        logger.error(f"❌ Error in morning workflow: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        raise
+
+def run_evening_workflow():
+    """Run evening workflow: Calendar fetch, location analysis, evening notifications"""
+    logger.info("="*70)
+    logger.info("EVENING WORKFLOW (7 PM)")
+    logger.info("="*70)
+    logger.info("Tasks:")
+    logger.info("  1. 📅 Fetch calendar data for tomorrow")
+    logger.info("  2. 📍 Analyze location data from today")
+    logger.info("  3. 🔔 Send evening mood check notifications")
+    logger.info("="*70)
+    logger.info(f"Current time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+    
+    try:
+        # Step 1: Fetch calendar data
+        logger.info("STEP 1: Fetching calendar data...")
+        fetch_calendar_for_all_users()
+        
+        # Step 2: Analyze location data
+        logger.info("\nSTEP 2: Analyzing location data...")
+        analyze_locations_for_all_users()
+        
+        # Step 3: Send evening notifications
+        logger.info("\nSTEP 3: Sending evening notifications...")
+        send_evening_notifications()
+        
+        logger.info("\n" + "="*70)
+        logger.info("✅ EVENING WORKFLOW COMPLETED SUCCESSFULLY")
+        logger.info("="*70)
+        
+    except Exception as e:
+        logger.error(f"❌ Error in evening workflow: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        raise
+
 def run_all_schedulers():
     """Run calendar, location, mood notification, and activity recommendation schedulers"""
     logger.info("="*70)
     logger.info("ACTIVITY RECOMMENDATION SCHEDULER STARTED")
     logger.info("="*70)
     logger.info("Scheduled tasks:")
-    logger.info("  📅 Calendar fetch & backup: 12:30 AM (00:30)")
-    logger.info("  📍 Location analysis & summary: 12:30 AM (00:30)")
-    logger.info("  🔔 Mood notifications: 12:30 AM (00:30)")
-    logger.info("  🎯 Activity recommendations: 12:30 AM (00:30)")
+    logger.info("  📅 Calendar fetch & backup: 7 AM & 7 PM")
+    logger.info("  📍 Location analysis & summary: 7 AM & 7 PM")
+    logger.info("  🔔 Mood notifications: 7 AM (morning) & 7 PM (evening)")
+    logger.info("  🎯 Activity recommendations: 7 AM (morning)")
     logger.info("="*70)
     logger.info(f"Current time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
     
-    # Schedule ALL tasks at 12:30 AM
-    schedule.every().day.at("00:30").do(fetch_calendar_for_all_users)
-    schedule.every().day.at("00:30").do(analyze_locations_for_all_users)
-    schedule.every().day.at("00:30").do(send_mood_notifications)
-    schedule.every().day.at("00:30").do(generate_activity_recommendations)
+    # Schedule morning workflow at 7 AM
+    schedule.every().day.at("07:00").do(run_morning_workflow)
     
-    # Run immediately for testing (if current time is close to scheduled time)
-    current_hour = datetime.now().hour
-    current_minute = datetime.now().minute
-    
-    # If it's close to 12:30 AM (within 10 minutes), run all tasks immediately
-    if current_hour == 0 and 20 <= current_minute <= 40:
-        logger.info("⏰ Current time is close to 12:30 AM, running all tasks immediately...\n")
-        fetch_calendar_for_all_users()
-        analyze_locations_for_all_users()
-        send_mood_notifications()
-        generate_activity_recommendations()
+    # Schedule evening workflow at 7 PM
+    schedule.every().day.at("19:00").do(run_evening_workflow)
     
     logger.info("Waiting for scheduled times...")
     logger.info("Press Ctrl+C to stop\n")
@@ -369,67 +484,73 @@ def run_all_schedulers():
         time.sleep(60)  # Check every minute if a job needs to run
 
 if __name__ == "__main__":
-    print("\n" + "="*70)
-    print("ACTIVITY RECOMMENDATION SCHEDULER")
-    print("="*70)
-    print("\nOptions:")
-    print("1. Run one-time tasks now (calendar + location + notifications + recommendations)")
-    print("2. Run continuous scheduler (runs daily at scheduled times)")
-    print("3. Test: Run all tasks now + start scheduler")
-    print("="*70)
-    
     import sys
-    if len(sys.argv) > 1:
-        choice = sys.argv[1]
-    else:
-        choice = input("\nEnter choice (1, 2, or 3): ").strip()
     
-    if choice == "1":
-        print("\nRunning one-time tasks...\n")
-        fetch_calendar_for_all_users()
-        analyze_locations_for_all_users()
-        send_mood_notifications()
-        generate_activity_recommendations()
-    elif choice == "2":
-        print("\nStarting continuous scheduler...")
-        print("All tasks will run at:")
-        print("  - Calendar fetch & backup: 12:30 AM (00:30)")
-        print("  - Location analysis & summary: 12:30 AM (00:30)")
-        print("  - Mood notifications: 12:30 AM (00:30)")
-        print("  - Activity recommendations: 12:30 AM (00:30)")
-        print("\n⚠️  IMPORTANT: The scheduler must be running at the scheduled times!")
-        print("   If you start it after the scheduled time, tasks will run tomorrow.")
-        print("\nPress Ctrl+C to stop\n")
-        try:
-            run_all_schedulers()
-        except KeyboardInterrupt:
-            print("\n\nScheduler stopped by user")
-    elif choice == "3":
-        print("\nRunning tasks now, then starting scheduler...\n")
-        print("="*70)
-        print("RUNNING TASKS NOW")
-        print("="*70)
-        fetch_calendar_for_all_users()
-        analyze_locations_for_all_users()
-        send_mood_notifications()
-        generate_activity_recommendations()
-        print("\n" + "="*70)
-        print("STARTING CONTINUOUS SCHEDULER")
-        print("="*70)
-        print("\nAll tasks will run at:")
-        print("  - Calendar fetch & backup: 12:30 AM (00:30)")
-        print("  - Location analysis & summary: 12:30 AM (00:30)")
-        print("  - Mood notifications: 12:30 AM (00:30)")
-        print("  - Activity recommendations: 12:30 AM (00:30)")
-        print("\nPress Ctrl+C to stop\n")
-        try:
-            run_all_schedulers()
-        except KeyboardInterrupt:
-            print("\n\nScheduler stopped by user")
+    # Check for command line arguments (for GitHub Actions)
+    if len(sys.argv) > 1:
+        mode = sys.argv[1].lower()
+        
+        if mode == "morning":
+            print("\n" + "="*70)
+            print("RUNNING MORNING WORKFLOW (7 AM)")
+            print("="*70)
+            run_morning_workflow()
+        elif mode == "evening":
+            print("\n" + "="*70)
+            print("RUNNING EVENING WORKFLOW (7 PM)")
+            print("="*70)
+            run_evening_workflow()
+        elif mode == "test":
+            print("\n" + "="*70)
+            print("RUNNING TEST: All tasks now")
+            print("="*70)
+            fetch_calendar_for_all_users()
+            analyze_locations_for_all_users()
+            send_morning_notifications()
+            generate_activity_recommendations()
+        else:
+            print(f"\nUnknown mode: {mode}")
+            print("Usage: python run_schedulers.py [morning|evening|test]")
+            sys.exit(1)
     else:
-        print("\nInvalid choice. Running one-time tasks...\n")
-        fetch_calendar_for_all_users()
-        analyze_locations_for_all_users()
-        send_mood_notifications()
-        generate_activity_recommendations()
+        # Interactive mode
+        print("\n" + "="*70)
+        print("ACTIVITY RECOMMENDATION SCHEDULER")
+        print("="*70)
+        print("\nOptions:")
+        print("1. Run morning workflow now (calendar + location + morning notifications + recommendations)")
+        print("2. Run evening workflow now (calendar + location + evening notifications)")
+        print("3. Run continuous scheduler (runs daily at 7 AM & 7 PM)")
+        print("4. Test: Run all tasks now")
+        print("="*70)
+        
+        choice = input("\nEnter choice (1, 2, 3, or 4): ").strip()
+        
+        if choice == "1":
+            print("\nRunning morning workflow...\n")
+            run_morning_workflow()
+        elif choice == "2":
+            print("\nRunning evening workflow...\n")
+            run_evening_workflow()
+        elif choice == "3":
+            print("\nStarting continuous scheduler...")
+            print("Workflows will run at:")
+            print("  - Morning (7 AM): Calendar + Location + Morning Notifications + Recommendations")
+            print("  - Evening (7 PM): Calendar + Location + Evening Notifications")
+            print("\n⚠️  IMPORTANT: The scheduler must be running at the scheduled times!")
+            print("   If you start it after the scheduled time, tasks will run tomorrow.")
+            print("\nPress Ctrl+C to stop\n")
+            try:
+                run_all_schedulers()
+            except KeyboardInterrupt:
+                print("\n\nScheduler stopped by user")
+        elif choice == "4":
+            print("\nRunning test: all tasks now...\n")
+            fetch_calendar_for_all_users()
+            analyze_locations_for_all_users()
+            send_morning_notifications()
+            generate_activity_recommendations()
+        else:
+            print("\nInvalid choice. Running morning workflow...\n")
+            run_morning_workflow()
 
