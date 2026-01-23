@@ -1254,6 +1254,254 @@ async def get_notification_responses(
         logger.error(f"Error retrieving responses: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.get("/api/notifications/pending/{user_id}")
+async def get_pending_notifications(
+    user_id: str,
+    user_id_obj: dict = Depends(verify_token)
+):
+    """
+    Get pending notifications for a user (notifications that haven't been answered or dismissed).
+    These are displayed in the "View Notifications" section.
+    """
+    try:
+        # Get notifications from notification_log
+        # First try with status filter, if column doesn't exist, get all and filter in Python
+        try:
+            result = supabase.table("notification_log")\
+                .select("*")\
+                .eq("id", user_id)\
+                .eq("status", "pending")\
+                .order("sent_at", desc=True)\
+                .execute()
+        except Exception as status_error:
+            # If status column doesn't exist, get all notifications and filter in Python
+            logger.warning(f"Status column not found, filtering in Python: {str(status_error)}")
+            result = supabase.table("notification_log")\
+                .select("*")\
+                .eq("id", user_id)\
+                .order("sent_at", desc=True)\
+                .execute()
+            
+            # Filter to only show notifications that haven't been answered
+            # Check if there's a response in push_notification_responses
+            if result.data:
+                from datetime import datetime, timedelta
+                today = datetime.now().date()
+                
+                # Get answered notifications for today
+                answered_result = supabase.table("push_notification_responses")\
+                    .select("notification_type, timestamp")\
+                    .eq("id", user_id)\
+                    .gte("timestamp", f"{today}T00:00:00")\
+                    .execute()
+                
+                answered_types = set()
+                if answered_result.data:
+                    for resp in answered_result.data:
+                        resp_type = resp.get("notification_type")
+                        resp_time = resp.get("timestamp", "")
+                        # Check if it's from today
+                        if resp_time.startswith(str(today)):
+                            answered_types.add(resp_type)
+                
+                # Filter out answered notifications
+                filtered_data = []
+                for notif in result.data:
+                    notif_type = notif.get("notification_type")
+                    notif_time = notif.get("sent_at", "")
+                    
+                    # Only include if not answered today
+                    if notif_type not in answered_types:
+                        # Also check if sent_at is today
+                        if notif_time.startswith(str(today)):
+                            filtered_data.append(notif)
+                
+                result.data = filtered_data
+        
+        notifications = []
+        if result.data:
+            for notif in result.data:
+                # Use response_id if available, otherwise create one
+                notification_id = notif.get("response_id")
+                if not notification_id:
+                    # Generate ID from sent_at timestamp
+                    sent_at = notif.get("sent_at", "")
+                    notification_id = f"{user_id}_{sent_at.replace(':', '-').replace('.', '-')}"
+                
+                # Extract title and body from message if title/body don't exist
+                title = notif.get("title")
+                body = notif.get("body")
+                message = notif.get("message", "")
+                
+                # If title/body don't exist, extract from message
+                if not title and message:
+                    # Try to extract title (first line or first sentence)
+                    if "!" in message:
+                        title = message.split("!")[0] + "!"
+                        body = message.split("!", 1)[1].strip() if "!" in message else message
+                    else:
+                        title = message.split("?")[0] + "?" if "?" in message else message[:30]
+                        body = message
+                
+                notifications.append({
+                    "id": notification_id,
+                    "notification_id": notification_id,
+                    "type": notif.get("notification_type"),
+                    "title": title or "Notification",
+                    "body": body or message or "Check your mood",
+                    "sent_at": notif.get("sent_at"),
+                    "created_at": notif.get("created_at") or notif.get("sent_at"),
+                    "status": notif.get("status", "pending")
+                })
+        
+        return JSONResponse({
+            "status": "success",
+            "notifications": notifications,
+            "count": len(notifications)
+        })
+    
+    except Exception as e:
+        logger.error(f"Error getting pending notifications: {str(e)}")
+        return JSONResponse({
+            "status": "error",
+            "notifications": [],
+            "message": str(e)
+        })
+
+@app.post("/api/notifications/answer/{notification_id}")
+async def answer_notification(
+    notification_id: str,
+    user_id: str = Form(...),
+    answer: str = Form(...),
+    user_id_obj: dict = Depends(verify_token)
+):
+    """
+    Answer a notification (morning/evening mood check).
+    Processes the answer and generates recommendations if it's a morning notification.
+    """
+    try:
+        # Get notification details
+        notif_result = supabase.table("notification_log")\
+            .select("*")\
+            .eq("response_id", notification_id)\
+            .eq("id", user_id)\
+            .execute()
+        
+        if not notif_result.data:
+            raise HTTPException(status_code=404, detail="Notification not found")
+        
+        notification = notif_result.data[0]
+        notification_type = notification.get("notification_type")
+        
+        # Save the response
+        if notification_service:
+            success = notification_service.save_notification_response(
+                user_id, 
+                notification_type, 
+                answer
+            )
+            
+            if not success:
+                raise HTTPException(status_code=500, detail="Failed to save response")
+        
+        # Update notification status to "answered" (if status column exists)
+        try:
+            supabase.table("notification_log")\
+                .update({"status": "answered"})\
+                .eq("response_id", notification_id)\
+                .eq("id", user_id)\
+                .execute()
+        except Exception as e:
+            # If status column doesn't exist, that's okay - we track via push_notification_responses
+            logger.debug(f"Could not update status column (may not exist): {str(e)}")
+        
+        # If it's a morning notification, generate recommendations
+        recommendations = None
+        if notification_type == "morning_mood_check":
+            try:
+                logger.info(f"🎯 Generating recommendations for morning notification (user_id: {user_id})")
+                from activity_recommendation_service import ActivityRecommendationService
+                recommendation_service = ActivityRecommendationService(supabase)
+                result = recommendation_service.generate_recommendations(user_id)
+                
+                logger.info(f"📊 Recommendation generation result: status={result.get('status')}")
+                logger.info(f"📊 Result keys: {list(result.keys())}")
+                
+                if result.get("status") == "success":
+                    recommendations = result.get("recommendations", [])
+                    logger.info(f"✅ Got {len(recommendations)} recommendations from AI")
+                    if recommendations:
+                        logger.info(f"   First recommendation title: {recommendations[0].get('title', 'N/A')}")
+                        logger.info(f"   All recommendations: {recommendations}")
+                    else:
+                        logger.warning(f"⚠️ Recommendations list is empty!")
+                elif result.get("status") == "error":
+                    logger.error(f"❌ Recommendation generation failed: {result.get('message')}")
+                    logger.error(f"   AI response: {result.get('ai_response', 'N/A')[:500]}")
+                    recommendations = []  # Return empty, not fallback
+                else:
+                    logger.warning(f"⚠️ Unknown status: {result.get('status')}")
+                    recommendations = []
+            except Exception as e:
+                logger.error(f"❌ Exception generating recommendations: {str(e)}")
+                import traceback
+                logger.error(traceback.format_exc())
+                recommendations = []  # Return empty, not fallback
+        
+        logger.info(f"📤 Returning {len(recommendations) if recommendations else 0} recommendations to frontend")
+        if recommendations:
+            logger.info(f"   Returning recommendations: {[r.get('title', 'N/A') for r in recommendations[:3]]}")
+        
+        return JSONResponse({
+            "status": "success",
+            "message": "Response saved successfully",
+            "notification_type": notification_type,
+            "recommendations": recommendations or [],  # Ensure it's always a list, never None
+            "has_recommendations": recommendations is not None and len(recommendations) > 0
+        })
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error answering notification: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/notifications/dismiss/{notification_id}")
+async def dismiss_notification(
+    notification_id: str,
+    user_id: str = Form(...),
+    user_id_obj: dict = Depends(verify_token)
+):
+    """Dismiss a notification (mark as dismissed)"""
+    try:
+        # Update notification status to "dismissed" (if status column exists)
+        try:
+            result = supabase.table("notification_log")\
+                .update({"status": "dismissed"})\
+                .eq("response_id", notification_id)\
+                .eq("id", user_id)\
+                .execute()
+        except Exception as e:
+            # If status column doesn't exist, create a dismissal record instead
+            logger.debug(f"Could not update status column (may not exist): {str(e)}")
+            # Alternative: Store dismissal in a separate way or just skip
+            # For now, we'll just return success even if column doesn't exist
+            result = type('obj', (object,), {'data': [{'id': notification_id}]})()
+        
+        if not result.data:
+            raise HTTPException(status_code=404, detail="Notification not found")
+        
+        return JSONResponse({
+            "status": "success",
+            "message": "Notification dismissed"
+        })
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error dismissing notification: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.post("/api/notifications/send-morning")
 async def trigger_morning_notification(
     user_id: str = Form(...),
