@@ -5,8 +5,12 @@ import warnings
 import os
 import re
 from supabase import create_client, Client
+from dotenv import load_dotenv
 
 warnings.filterwarnings('ignore')
+
+# Load environment variables from .env file
+load_dotenv()
 
 class ModelAnalyzer:
     """
