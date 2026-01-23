@@ -20,13 +20,13 @@ jobs:
           python-version: '3.9'
 
       - name: Install dependencies
-        working-directory: ./health_monitor/backend
+        working-directory: ./backend
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
       - name: Run Test Workflow (Morning Tasks)
-        working-directory: ./health_monitor/backend
+        working-directory: ./backend
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
