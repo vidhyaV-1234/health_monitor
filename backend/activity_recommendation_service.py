@@ -15,7 +15,11 @@ from datetime import datetime, date, timedelta
 from typing import Dict, List, Optional
 import logging
 from supabase import Client
+from dotenv import load_dotenv
 from model_analyzer import ModelAnalyzer
+
+# Load environment variables from .env file
+load_dotenv()
 
 class ActivityRecommendationService:
     """Service for generating personalized activity recommendations"""
@@ -138,26 +142,63 @@ class ActivityRecommendationService:
                     'recommendations': []
                 }
             
-            # Prepare data for model analyzer
+            # Use model_analyzer - it already handles:
+            # - Fetching calendar data from DB
+            # - Fetching location data from DB  
+            # - Fetching notification responses from DB
+            # - Constructing comprehensive prompt
+            # - Calling AWS Bedrock/Claude
+            morning_emotion = user_data.get('morning_emotion') or 'neutral'
+            
+            # Prepare minimal preprocessed_data - model_analyzer will fetch everything else from DB
             preprocessed_data = {
-                'text': f"Generate daily recommendations based on my schedule and recent activities",
+                'text': "Generate personalized activity recommendations based on my schedule, location, and mood.",
                 'has_text': True,
                 'has_audio': False,
                 'has_image': False,
                 'audio_transcript': None,
-                'emotion': user_data.get('morning_emotion', 'neutral'),
+                'emotion': morning_emotion,
                 'emotion_confidence': 0.8,
                 'emotion_details': {}
             }
             
-            # Use model analyzer to generate recommendations
+            # Use model analyzer - it handles all the data fetching and prompt construction
+            self.logger.info("🤖 Calling model_analyzer (it will fetch calendar/location/notifications from DB)...")
             result = self.model_analyzer.analyze(user_id, preprocessed_data)
             
-            # Parse recommendations from the analysis
-            recommendations = self.parse_recommendations(result['analysis'])
+            # Parse recommendations from the analysis text
+            analysis_text = result.get('analysis', '')
+            self.logger.info(f"📄 AI Response received: {len(analysis_text)} characters")
+            self.logger.info(f"📄 AI Response (first 500 chars): {analysis_text[:500]}")
+            self.logger.info(f"📄 AI Response (full): {analysis_text}")
             
-            # Send recommendations as push notification
-            notification_sent = self.send_recommendations_as_notifications(user_id, recommendations)
+            # Parse recommendations from the analysis
+            recommendations = self.parse_recommendations(analysis_text)
+            
+            self.logger.info(f"✅ Parsed {len(recommendations)} recommendations")
+            if recommendations:
+                self.logger.info(f"   First recommendation: {recommendations[0]}")
+                self.logger.info(f"   All recommendations: {recommendations}")
+            
+            # Check if we got recommendations
+            if not recommendations or len(recommendations) == 0:
+                self.logger.error("❌ No recommendations parsed from AI response")
+                self.logger.error(f"   Full AI response: {analysis_text}")
+                return {
+                    'status': 'error',
+                    'message': 'Failed to parse recommendations from AI response. Check logs for details.',
+                    'user_id': user_id,
+                    'recommendations': [],
+                    'ai_response': analysis_text[:1000],  # Include first 1000 chars for debugging
+                    'mood': result.get('mood', 'neutral'),
+                    'stress_level': result.get('stress_level', 0),
+                    'stress_day': result.get('stress_day', 0),
+                    'stress_alert': result.get('stress_alert')
+                }
+            
+            # Send recommendations as push notification (only if we have recommendations)
+            if recommendations:
+                notification_sent = self.send_recommendations_as_notifications(user_id, recommendations)
             
             return {
                 'status': 'success',
@@ -189,72 +230,111 @@ class ActivityRecommendationService:
         """Parse the AI-generated recommendations into structured format"""
         recommendations = []
         
+        if not analysis_text or len(analysis_text.strip()) == 0:
+            self.logger.error("❌ Empty analysis text received from AI")
+            return []
+        
         try:
             lines = analysis_text.split('\n')
+            self.logger.info(f"📝 Parsing {len(lines)} lines from AI response")
             
-            for line in lines:
+            for line_num, line in enumerate(lines, 1):
                 line = line.strip()
+                if not line:
+                    continue
                 
-                # Look for numbered recommendations (1., 2., etc.)
-                if any(line.startswith(f'{i}.') for i in range(1, 6)):
-                    # Extract number and content
-                    parts = line.split('.', 1)
-                    if len(parts) == 2:
-                        number = parts[0].strip()
-                        content = parts[1].strip()
-                        
-                        # Split title and description if separated by " - "
-                        if ' - ' in content:
-                            title, description = content.split(' - ', 1)
+                # Look for numbered recommendations (1., 2., etc.) or (1), (2), etc.
+                import re
+                
+                # Pattern 1: "1. Title - Description" or "1) Title - Description"
+                match = re.match(r'^(\d+)[.)]\s*(.+)$', line)
+                if match:
+                    number = int(match.group(1))
+                    content = match.group(2).strip()
+                    
+                    # Split title and description if separated by " - " or ":"
+                    if ' - ' in content:
+                        title, description = content.split(' - ', 1)
+                    elif ': ' in content and len(content.split(': ')) == 2:
+                        title, description = content.split(': ', 1)
+                    else:
+                        # If no separator, use first few words as title
+                        words = content.split()
+                        if len(words) > 4:
+                            title = ' '.join(words[:3])
+                            description = ' '.join(words[3:])
                         else:
-                            # If no separator, use first few words as title
-                            words = content.split()
+                            title = content
+                            description = content
+                    
+                    recommendations.append({
+                        'id': number,
+                        'title': title.strip(),
+                        'description': description.strip(),
+                        'full_text': content.strip()
+                    })
+                    self.logger.debug(f"  ✓ Parsed recommendation {number}: {title[:30]}...")
+                    continue
+                
+                # Pattern 2: Look for lines that might be recommendations without numbers
+                # (fallback for AI that doesn't follow format exactly)
+                if line_num <= 10 and len(line) > 20:  # Only check first 10 lines
+                    # Check if it looks like a recommendation (has action words)
+                    action_words = ['take', 'do', 'try', 'practice', 'go', 'start', 'drink', 'walk', 'exercise']
+                    if any(word in line.lower() for word in action_words):
+                        # Try to extract as a recommendation
+                        if ' - ' in line:
+                            parts = line.split(' - ', 1)
+                            title = parts[0].strip()
+                            description = parts[1].strip()
+                        else:
+                            words = line.split()
                             if len(words) > 3:
                                 title = ' '.join(words[:3])
                                 description = ' '.join(words[3:])
                             else:
-                                title = content
-                                description = content
+                                title = line
+                                description = line
                         
                         recommendations.append({
-                            'id': int(number),
+                            'id': len(recommendations) + 1,
                             'title': title.strip(),
                             'description': description.strip(),
-                            'full_text': content.strip()
+                            'full_text': line.strip()
                         })
+                        self.logger.debug(f"  ✓ Parsed unnumbered recommendation: {title[:30]}...")
             
-            # Ensure we have exactly 5 recommendations
-            if len(recommendations) < 5:
-                # Add generic recommendations if needed
-                generic_recs = [
-                    {'id': 1, 'title': 'Hydration', 'description': 'Drink a glass of water', 'full_text': 'Hydration - Drink a glass of water'},
-                    {'id': 2, 'title': 'Deep breathing', 'description': 'Take 5 deep breaths', 'full_text': 'Deep breathing - Take 5 deep breaths'},
-                    {'id': 3, 'title': 'Stretch', 'description': 'Do light stretching', 'full_text': 'Stretch - Do light stretching'},
-                    {'id': 4, 'title': 'Walk', 'description': 'Take a short walk', 'full_text': 'Walk - Take a short walk'},
-                    {'id': 5, 'title': 'Mindfulness', 'description': 'Practice mindfulness for 5 minutes', 'full_text': 'Mindfulness - Practice mindfulness for 5 minutes'}
-                ]
-                
-                for i in range(len(recommendations), 5):
-                    if i < len(generic_recs):
-                        recommendations.append(generic_recs[i])
+            # Remove duplicates based on title
+            seen_titles = set()
+            unique_recommendations = []
+            for rec in recommendations:
+                title_lower = rec['title'].lower()
+                if title_lower not in seen_titles:
+                    seen_titles.add(title_lower)
+                    unique_recommendations.append(rec)
+            recommendations = unique_recommendations
             
-            # Limit to exactly 5 recommendations
-            recommendations = recommendations[:5]
+            self.logger.info(f"✅ Parsed {len(recommendations)} unique recommendations")
             
-            self.logger.info(f"✅ Parsed {len(recommendations)} recommendations")
+            # Return what we parsed - no fallback, no filling
+            if len(recommendations) >= 5:
+                recommendations = recommendations[:5]
+                self.logger.info(f"✅ Successfully parsed 5 recommendations")
+            elif len(recommendations) > 0:
+                self.logger.warning(f"⚠️ Only parsed {len(recommendations)} recommendations (expected 5)")
+                self.logger.warning(f"   Returning {len(recommendations)} recommendations as-is")
+            else:
+                self.logger.error(f"❌ Failed to parse any recommendations from AI response")
+                self.logger.error(f"   AI response: {analysis_text}")
+            
+            return recommendations[:5]  # Return up to 5, even if fewer
             
         except Exception as e:
             self.logger.error(f"❌ Error parsing recommendations: {str(e)}")
-            # Return default recommendations
-            recommendations = [
-                {'id': 1, 'title': 'Hydration', 'description': 'Start your day with water', 'full_text': 'Hydration - Start your day with water'},
-                {'id': 2, 'title': 'Movement', 'description': 'Do light stretching', 'full_text': 'Movement - Do light stretching'},
-                {'id': 3, 'title': 'Breathing', 'description': 'Practice deep breathing', 'full_text': 'Breathing - Practice deep breathing'},
-                {'id': 4, 'title': 'Mindfulness', 'description': 'Take a mindful moment', 'full_text': 'Mindfulness - Take a mindful moment'},
-                {'id': 5, 'title': 'Self-care', 'description': 'Do something you enjoy', 'full_text': 'Self-care - Do something you enjoy'}
-            ]
-        
-        return recommendations
+            self.logger.error(f"   Analysis text: {analysis_text}")
+            import traceback
+            self.logger.error(traceback.format_exc())
+            return []  # Return empty list instead of fallback
     
     def send_recommendations_as_notifications(self, user_id: str, recommendations: List[Dict]) -> bool:
         """Send the 5 activity recommendations as push notifications to user"""
