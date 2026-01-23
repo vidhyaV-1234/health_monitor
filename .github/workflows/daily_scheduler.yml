@@ -2,30 +2,29 @@ name: Test Scheduler - Every 10 Minutes
 
 on:
   schedule:
-    # Run every 10 minutes for testing
-    - cron: '*/10 * * * *'  # Every 10 minutes
-  workflow_dispatch:  # Allow manual triggering
+    - cron: '*/10 * * * *'
+  workflow_dispatch:
 
 jobs:
   test-workflow:
     runs-on: ubuntu-latest
     name: Test Workflow (Every 10 Minutes)
-    
+
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
-      
+        uses: actions/checkout@v4
+
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
           python-version: '3.9'
-      
+
       - name: Install dependencies
         working-directory: ./health_monitor/backend
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-      
+
       - name: Run Test Workflow (Morning Tasks)
         working-directory: ./health_monitor/backend
         env:
@@ -43,12 +42,11 @@ jobs:
           echo "🧪 Running test workflow (every 10 minutes)"
           echo "⏰ Current time: $(date)"
           python run_schedulers.py morning
-      
+
       - name: Upload logs
         if: always()
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: test-logs-${{ github.run_id }}
           path: health_monitor/backend/*.log
           retention-days: 7
-
