@@ -71,53 +71,149 @@ class PushNotificationService:
             traceback.print_exc()
             return False
     
-    def send_morning_notification(self, user_id: str) -> Optional[str]:
-        """Send morning mood check notification"""
-        notification = {
-            'title': '☀️ Good morning!',
-            'body': 'How are you feeling today?',
-            'data': {
-                'type': 'morning_mood_check',
-                'user_id': user_id,
-                'timestamp': datetime.now().isoformat()
+    def create_morning_notification(self, user_id: str) -> bool:
+        """Create morning mood check notification in database (for frontend display)"""
+        try:
+            import uuid
+            notification_id = str(uuid.uuid4())
+            
+            # Get stress_day from report table (default to 0 if not found)
+            stress_day = 0
+            try:
+                report_result = self.supabase.table("report")\
+                    .select("stress_day")\
+                    .eq("id", user_id)\
+                    .execute()
+                if report_result.data and report_result.data[0].get("stress_day") is not None:
+                    stress_day = report_result.data[0].get("stress_day", 0)
+            except:
+                pass  # Use default 0
+            
+            notification_data = {
+                "id": user_id,
+                "notification_type": "morning_mood_check",
+                "message": "☀️ Good morning! How are you feeling today?",  # Required field
+                "stress_day": stress_day,  # Required field
+                "sent_at": datetime.now().isoformat()
             }
-        }
-        
-        # Actions for user to tap
-        actions = [
-            {'id': 'energized', 'title': '💪 Energized'},
-            {'id': 'tired', 'title': '😴 Tired'},
-            {'id': 'neutral', 'title': '😐 Neutral'},
-            {'id': 'stressed', 'title': '😰 Stressed'}
-        ]
-        
-        notification['data']['actions'] = json.dumps(actions)
-        
-        return self.send_notification(user_id, notification)
+            
+            # Add optional fields if columns exist
+            optional_fields = {
+                "response_id": notification_id,
+                "title": "☀️ Good morning!",
+                "body": "How are you feeling today?",
+                "status": "pending",
+                "created_at": datetime.now().isoformat()
+            }
+            
+            # Insert into notification_log
+            # Try with all fields first, then fallback to minimal required fields
+            try:
+                # Try with all fields
+                full_data = {**notification_data, **optional_fields}
+                self.supabase.table("notification_log").insert(full_data).execute()
+            except Exception as insert_error:
+                error_str = str(insert_error)
+                # If optional fields don't exist, use only required fields
+                if any(field in error_str for field in ["response_id", "title", "body", "status", "created_at"]):
+                    # Use only required fields: id, notification_type, message, stress_day, sent_at
+                    minimal_data = {
+                        "id": user_id,
+                        "notification_type": notification_data["notification_type"],
+                        "message": notification_data["message"],
+                        "stress_day": notification_data["stress_day"],
+                        "sent_at": notification_data["sent_at"]
+                    }
+                    self.supabase.table("notification_log").insert(minimal_data).execute()
+                else:
+                    raise
+            
+            print(f"✅ Morning notification created for user {user_id} (ID: {notification_id})")
+            return True
+            
+        except Exception as e:
+            print(f"Error creating morning notification: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            return False
+    
+    def send_morning_notification(self, user_id: str) -> Optional[str]:
+        """Send morning mood check notification (legacy FCM method - now creates DB notification instead)"""
+        # Instead of sending FCM, create notification in database
+        success = self.create_morning_notification(user_id)
+        return "created" if success else None
+    
+    def create_evening_notification(self, user_id: str) -> bool:
+        """Create evening mood check notification in database (for frontend display)"""
+        try:
+            import uuid
+            notification_id = str(uuid.uuid4())
+            
+            # Get stress_day from report table (default to 0 if not found)
+            stress_day = 0
+            try:
+                report_result = self.supabase.table("report")\
+                    .select("stress_day")\
+                    .eq("id", user_id)\
+                    .execute()
+                if report_result.data and report_result.data[0].get("stress_day") is not None:
+                    stress_day = report_result.data[0].get("stress_day", 0)
+            except:
+                pass  # Use default 0
+            
+            notification_data = {
+                "id": user_id,
+                "notification_type": "evening_mood_check",
+                "message": "🌙 Good evening! How was your day?",  # Required field
+                "stress_day": stress_day,  # Required field
+                "sent_at": datetime.now().isoformat()
+            }
+            
+            # Add optional fields if columns exist
+            optional_fields = {
+                "response_id": notification_id,
+                "title": "🌙 Good evening!",
+                "body": "How was your day?",
+                "status": "pending",
+                "created_at": datetime.now().isoformat()
+            }
+            
+            # Insert into notification_log
+            # Try with all fields first, then fallback to minimal required fields
+            try:
+                # Try with all fields
+                full_data = {**notification_data, **optional_fields}
+                self.supabase.table("notification_log").insert(full_data).execute()
+            except Exception as insert_error:
+                error_str = str(insert_error)
+                # If optional fields don't exist, use only required fields
+                if any(field in error_str for field in ["response_id", "title", "body", "status", "created_at"]):
+                    # Use only required fields: id, notification_type, message, stress_day, sent_at
+                    minimal_data = {
+                        "id": user_id,
+                        "notification_type": notification_data["notification_type"],
+                        "message": notification_data["message"],
+                        "stress_day": notification_data["stress_day"],
+                        "sent_at": notification_data["sent_at"]
+                    }
+                    self.supabase.table("notification_log").insert(minimal_data).execute()
+                else:
+                    raise
+            
+            print(f"✅ Evening notification created for user {user_id} (ID: {notification_id})")
+            return True
+            
+        except Exception as e:
+            print(f"Error creating evening notification: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            return False
     
     def send_evening_notification(self, user_id: str) -> Optional[str]:
-        """Send evening mood check notification"""
-        notification = {
-            'title': '🌙 How was your day?',
-            'body': 'Take a moment to reflect',
-            'data': {
-                'type': 'evening_mood_check',
-                'user_id': user_id,
-                'timestamp': datetime.now().isoformat()
-            }
-        }
-        
-        # Actions for user to tap
-        actions = [
-            {'id': 'great', 'title': '😊 Great day!'},
-            {'id': 'okay', 'title': '😌 It was okay'},
-            {'id': 'difficult', 'title': '😔 Difficult'},
-            {'id': 'exhausted', 'title': '😫 Exhausted'}
-        ]
-        
-        notification['data']['actions'] = json.dumps(actions)
-        
-        return self.send_notification(user_id, notification)
+        """Send evening mood check notification (legacy FCM method - now creates DB notification instead)"""
+        # Instead of sending FCM, create notification in database
+        success = self.create_evening_notification(user_id)
+        return "created" if success else None
     
     def send_notification(self, user_id: str, notification_data: Dict) -> Optional[str]:
         """Send a push notification to a specific user"""
